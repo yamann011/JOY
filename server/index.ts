@@ -559,11 +559,12 @@ const cinemaIO = io.of("/cinema");
 cinemaIO.use((socket, next) => {
   try {
     const auth = socket.handshake.auth || {};
-    const userId = Number((auth as any).userId);
+    const userId = String((auth as any).userId || "");
     const username = String((auth as any).username || "Misafir");
     const displayName = String((auth as any).displayName || username);
     const role = String((auth as any).role || "guest");
-    const safeUserId = Number.isFinite(userId) && userId > 0 ? userId : -1;
+    // Geçerli userId: boş değil ve "undefined"/"null" değil
+    const safeUserId = userId && userId !== "undefined" && userId !== "null" ? userId : "";
     (socket.data as any).user = { userId: safeUserId, username, displayName, role };
     return next();
   } catch {
@@ -572,7 +573,7 @@ cinemaIO.use((socket, next) => {
 });
 
 cinemaIO.on("connection", (socket) => {
-  const u = (socket.data as any).user as { userId: number; username: string; displayName: string; role: string };
+  const u = (socket.data as any).user as { userId: string; username: string; displayName: string; role: string };
   let currentRoomId: string | null = null;
 
   // Oda listesini gönder
@@ -589,7 +590,7 @@ cinemaIO.on("connection", (socket) => {
 
   // Oda oluştur
   socket.on("cinema:create", (payload: { name?: string; videoUrl?: string; password?: string }) => {
-    if (u.userId <= 0) {
+    if (!u.userId) {
       socket.emit("cinema:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
       return;
     }
