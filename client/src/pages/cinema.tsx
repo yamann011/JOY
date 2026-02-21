@@ -35,7 +35,9 @@ interface CinemaRoomInfo {
   videoUrl: string;
   isPlaying: boolean;
   participantCount: number;
+  participants: { username: string; displayName: string; role: string }[];
   createdBy: string;
+  createdByUserId: string;
   createdAt: number;
 }
 
@@ -53,6 +55,7 @@ interface VideoState {
   videoUrl: string;
   currentTime: number;
   isPlaying: boolean;
+  createdByUserId?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -109,6 +112,12 @@ export default function CinemaPage() {
     return r.includes("admin") || r.includes("moder") || r.includes("asistan") || r.includes("ajans");
   };
 
+  const canControlVideo = (vs?: VideoState | null) => {
+    if (!user) return false;
+    if (vs?.createdByUserId && String((user as any).id) === vs.createdByUserId) return true;
+    return canModerate();
+  };
+
   // ── Socket ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const socket = io("/cinema", {
@@ -128,6 +137,9 @@ export default function CinemaPage() {
     socket.on("cinema:room_added", (room: CinemaRoomInfo) =>
       setRooms(prev => [...prev.filter(r => r.id !== room.id), room])
     );
+    socket.on("cinema:room_participants", ({ roomId, participants: p, count }: { roomId: string; participants: any[]; count: number }) => {
+      setRooms(prev => prev.map(r => r.id === roomId ? { ...r, participantCount: count, participants: p } : r));
+    });
     socket.on("cinema:room_removed", ({ roomId }: { roomId: string }) => {
       setRooms(prev => prev.filter(r => r.id !== roomId));
       setCurrentRoom(prev => prev?.id === roomId ? null : prev);
@@ -264,14 +276,18 @@ export default function CinemaPage() {
               )}
             </div>
             <div className="flex items-center gap-3 px-4 py-3 bg-black border-t border-yellow-500/20 shrink-0">
-              {videoState.isPlaying ? (
-                <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold">
-                  <Pause className="w-4 h-4 mr-1" /> Duraklat
-                </Button>
+              {canControlVideo(videoState) ? (
+                videoState.isPlaying ? (
+                  <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold">
+                    <Pause className="w-4 h-4 mr-1" /> Duraklat
+                  </Button>
+                ) : (
+                  <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold">
+                    <Play className="w-4 h-4 mr-1" /> Oynat
+                  </Button>
+                )
               ) : (
-                <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold">
-                  <Play className="w-4 h-4 mr-1" /> Oynat
-                </Button>
+                <span className="text-xs text-yellow-500/40 italic">Sadece oda kurucusu ve yetkililer kontrol edebilir</span>
               )}
               <span className="text-xs text-yellow-500/60 ml-auto">
                 {videoState.isPlaying ? "▶ Oynatılıyor" : "⏸ Duraklatıldı"}
@@ -383,6 +399,21 @@ export default function CinemaPage() {
                       </Badge>
                     )}
                   </div>
+                  {/* Odadaki kişiler */}
+                  {room.participants && room.participants.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-1">
+                      {room.participants.slice(0, 5).map((p, i) => (
+                        <span key={i} className={`text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 ${roleColor(p.role)}`}>
+                          {p.displayName}
+                        </span>
+                      ))}
+                      {room.participants.length > 5 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/5 text-white/40">
+                          +{room.participants.length - 5}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Button
                       className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-sm"

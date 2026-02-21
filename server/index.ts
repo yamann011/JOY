@@ -511,6 +511,32 @@ io.on("connection", (socket) => {
     if (u.userId > 0 && userSocketMap.get(u.userId) === socket.id) {
       userSocketMap.delete(u.userId);
     }
+    if (currentRoomId) {
+      const room = cinemaRooms.get(currentRoomId);
+      if (room) {
+        room.participants.delete(socket.id);
+        const participantList = Array.from(room.participants.values());
+        cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:participant_update", {
+          count: room.participants.size,
+          participants: participantList,
+        });
+        cinemaIO.emit("cinema:room_participants", {
+          roomId: currentRoomId,
+          participants: participantList,
+          count: room.participants.size,
+        });
+        if (room.participants.size === 0) {
+          setTimeout(() => {
+            const r = cinemaRooms.get(currentRoomId!);
+            if (r && r.participants.size === 0) {
+              cinemaRooms.delete(currentRoomId!);
+              cinemaRoomMessages.delete(currentRoomId!);
+              cinemaIO.emit("cinema:room_removed", { roomId: currentRoomId });
+            }
+          }, 5 * 60 * 1000);
+        }
+      }
+    }
   });
 });
 
@@ -525,6 +551,7 @@ interface CinemaRoom {
   currentTime: number;
   isPlaying: boolean;
   createdBy: string;
+  createdByUserId: string;
   createdAt: number;
   participants: Map<string, { username: string; displayName: string; role: string }>;
 }
@@ -584,7 +611,9 @@ cinemaIO.on("connection", (socket) => {
     videoUrl: r.videoUrl,
     isPlaying: r.isPlaying,
     participantCount: r.participants.size,
+    participants: Array.from(r.participants.values()),
     createdBy: r.createdBy,
+    createdByUserId: r.createdByUserId,
     createdAt: r.createdAt,
   })));
 
@@ -609,6 +638,7 @@ cinemaIO.on("connection", (socket) => {
       currentTime: 0,
       isPlaying: false,
       createdBy: u.displayName,
+      createdByUserId: u.userId,
       createdAt: Date.now(),
       participants: new Map(),
     };
@@ -622,7 +652,9 @@ cinemaIO.on("connection", (socket) => {
       videoUrl,
       isPlaying: false,
       participantCount: 0,
+      participants: [],
       createdBy: room.createdBy,
+      createdByUserId: room.createdByUserId,
       createdAt: room.createdAt,
     });
     socket.emit("cinema:created", { roomId: id });
@@ -657,22 +689,40 @@ cinemaIO.on("connection", (socket) => {
       videoUrl: room.videoUrl,
       currentTime: room.currentTime,
       isPlaying: room.isPlaying,
+      createdByUserId: room.createdByUserId,
     });
 
     const msgs = cinemaRoomMessages.get(roomId) || [];
     socket.emit("cinema:messages_init", msgs.slice(-50));
 
+    const participantList = Array.from(room.participants.values());
     cinemaIO.to(`cinema:${roomId}`).emit("cinema:participant_update", {
       count: room.participants.size,
-      participants: Array.from(room.participants.values()),
+      participants: participantList,
+    });
+    // Tüm listeyi güncellemek için global broadcast
+    cinemaIO.emit("cinema:room_participants", {
+      roomId,
+      participants: participantList,
+      count: room.participants.size,
     });
   });
 
-  // Oynat/Duraklat/Seek (Admin/Mod veya oda sahibi kontrolü yok, tüm üyeler yapabilir)
+  // Oynat/Duraklat/Seek — sadece oda kurucusu + admin/mod
+  function canControlVideo(room: CinemaRoom): boolean {
+    if (u.userId && u.userId === room.createdByUserId) return true;
+    const r = u.role.toLowerCase();
+    return r.includes("admin") || r.includes("moder") || r.includes("asistan") || r.includes("ajans");
+  }
+
   socket.on("cinema:play", (payload: { currentTime?: number }) => {
     if (!currentRoomId) return;
     const room = cinemaRooms.get(currentRoomId);
     if (!room) return;
+    if (!canControlVideo(room)) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Sadece oda kurucusu ve yetkililer video kontrolü yapabilir." });
+      return;
+    }
     room.isPlaying = true;
     room.currentTime = Number(payload?.currentTime ?? room.currentTime);
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: true, currentTime: room.currentTime, by: u.username });
@@ -682,6 +732,10 @@ cinemaIO.on("connection", (socket) => {
     if (!currentRoomId) return;
     const room = cinemaRooms.get(currentRoomId);
     if (!room) return;
+    if (!canControlVideo(room)) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Sadece oda kurucusu ve yetkililer video kontrolü yapabilir." });
+      return;
+    }
     room.isPlaying = false;
     room.currentTime = Number(payload?.currentTime ?? room.currentTime);
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: false, currentTime: room.currentTime, by: u.username });
@@ -691,6 +745,7 @@ cinemaIO.on("connection", (socket) => {
     if (!currentRoomId) return;
     const room = cinemaRooms.get(currentRoomId);
     if (!room) return;
+    if (!canControlVideo(room)) return;
     room.currentTime = Number(payload?.currentTime ?? 0);
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: room.isPlaying, currentTime: room.currentTime, by: u.username });
   });

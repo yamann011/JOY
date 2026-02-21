@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useLocation } from "wouter";
 import { io, type Socket } from "socket.io-client";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { AnimatedUsername } from "@/components/animated-username";
@@ -13,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   MessageCircle, X, Send, Shield, Crown, Trash2, Ban, VolumeX,
-  Reply, XCircle, Mail, Users, ChevronLeft, PenSquare,
+  Reply, XCircle, Mail, Users, ChevronLeft, PenSquare, Search,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -101,6 +102,19 @@ export function FloatingChat() {
   const [showNewDm, setShowNewDm] = React.useState(false);
   const [newDmUserId, setNewDmUserId] = React.useState("");
   const [newDmDisplayName, setNewDmDisplayName] = React.useState("");
+  const [userSearch, setUserSearch] = React.useState("");
+
+  // Kullanıcı rehberi — sadece admin/ajans görebilir
+  const { data: allUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: canStartDm && showNewDm,
+    staleTime: 30000,
+  });
+  const filteredUsers = allUsers.filter((u: any) => {
+    if (!userSearch.trim()) return true;
+    const q = userSearch.toLowerCase();
+    return (u.displayName || "").toLowerCase().includes(q) || (u.username || "").toLowerCase().includes(q);
+  });
 
   const myId = Number((user as any)?.id);
   const myRole = String((user as any)?.role || "").toLowerCase();
@@ -303,6 +317,21 @@ export function FloatingChat() {
     openDmWith(fakeConvo);
     setShowNewDm(false);
     setNewDmUserId(""); setNewDmDisplayName("");
+  }
+
+  function startDmWithUser(u: any) {
+    const convo: DmConvo = {
+      withUserId: u.id,
+      withUsername: u.username,
+      withDisplayName: u.displayName || u.username,
+      withRole: u.role || "USER",
+      lastMsg: "",
+      lastAt: Date.now(),
+      unread: 0,
+    };
+    openDmWith(convo);
+    setShowNewDm(false);
+    setUserSearch("");
   }
 
   function clearAll() { socketRef.current?.emit("chat:clear"); }
@@ -541,17 +570,39 @@ export function FloatingChat() {
             {/* === DM TAB === */}
             {activeTab === "dm" && (
               <>
-                {/* New DM form */}
+                {/* Kullanıcı rehberi */}
                 {showNewDm && (
-                  <div className="px-3 py-2 border-b border-white/10 bg-white/5 shrink-0">
-                    <p className="text-xs text-white/60 mb-2">Kullanıcı ID ve adını gir:</p>
-                    <Input value={newDmUserId} onChange={e => setNewDmUserId(e.target.value)} placeholder="Kullanıcı ID (sayı)"
-                      className="bg-white/10 border-white/20 text-white text-xs h-7 mb-1.5" />
-                    <Input value={newDmDisplayName} onChange={e => setNewDmDisplayName(e.target.value)} placeholder="Görünen isim (opsiyonel)"
-                      className="bg-white/10 border-white/20 text-white text-xs h-7 mb-2" />
-                    <div className="flex gap-2">
-                      <Button size="sm" className="flex-1 h-7 text-xs bg-blue-600 hover:bg-blue-700" onClick={startNewDm}>Başlat</Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs text-white/60" onClick={() => setShowNewDm(false)}>İptal</Button>
+                  <div className="px-3 py-2 border-b border-white/10 bg-[#0a0a14] shrink-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-blue-400 font-semibold">Kullanıcı Seç</p>
+                      <Button variant="ghost" size="sm" className="h-5 px-1 text-white/40 hover:text-white" onClick={() => { setShowNewDm(false); setUserSearch(""); }}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="relative mb-2">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-white/30" />
+                      <Input value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="İsim ara..."
+                        className="bg-white/10 border-white/20 text-white text-xs h-7 pl-7 placeholder:text-white/30" />
+                    </div>
+                    <div className="max-h-36 overflow-y-auto space-y-1">
+                      {filteredUsers.filter((u: any) => u.id !== myId).map((u: any) => (
+                        <button key={u.id} onClick={() => startDmWithUser(u)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-left">
+                          <Avatar className="w-6 h-6 shrink-0">
+                            <AvatarFallback className="bg-blue-500/20 text-blue-400 text-xs">
+                              {(u.displayName || u.username)?.[0]?.toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className={cn("text-xs font-semibold truncate", roleColor(u.role))}>{u.displayName || u.username}</div>
+                            <div className="text-[10px] text-white/30 truncate">@{u.username}</div>
+                          </div>
+                          <span className="text-[10px] text-white/20 shrink-0 capitalize">{u.role?.toLowerCase()}</span>
+                        </button>
+                      ))}
+                      {filteredUsers.filter((u: any) => u.id !== myId).length === 0 && (
+                        <p className="text-xs text-white/30 text-center py-2">Kullanıcı bulunamadı</p>
+                      )}
                     </div>
                   </div>
                 )}
