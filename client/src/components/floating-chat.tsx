@@ -31,18 +31,18 @@ type ChatMessage = {
 
 type DmMsg = {
   id: string;
-  fromUserId: number;
+  fromUserId: string;
   fromUsername: string;
   fromDisplayName: string;
   fromRole: string;
-  toUserId: number;
+  toUserId: string;
   text: string;
   createdAt: number;
   read: boolean;
 };
 
 type DmConvo = {
-  withUserId: number;
+  withUserId: string;
   withUsername: string;
   withDisplayName: string;
   withRole: string;
@@ -78,7 +78,7 @@ export function FloatingChat() {
   if (location === "/login") return null;
 
   // ── Rol hesapları — useEffect'lerden ÖNCE tanımlanmalı ────────────────────
-  const myId = Number((user as any)?.id);
+  const myId = String((user as any)?.id || "");
   const myRole = String((user as any)?.role || "").toLowerCase();
   const canModerate = !!user && (myRole.includes("admin") || myRole.includes("vip") || myRole.includes("moder") || myRole.includes("ajans") || myRole.includes("asistan"));
   const canNuke = !!user && (myRole.includes("admin") || myRole.includes("vip") || myRole.includes("ajans"));
@@ -191,7 +191,7 @@ export function FloatingChat() {
     s.on("chat:message", (msg: ChatMessage) => {
       if (!msg?.id) return;
       setMessages(prev => [...prev, msg].slice(-100));
-      const mine = myId != null && msg.userId === myId;
+      const mine = myId !== "" && String(msg.userId) === myId;
       if (!mine) {
         if (!open || activeTab !== "global") {
           setUnreadGlobal(u => Math.min(u + 1, 99));
@@ -304,15 +304,15 @@ export function FloatingChat() {
   }
 
   function startNewDm() {
-    const uid = parseInt(newDmUserId);
-    if (!Number.isFinite(uid) || uid <= 0) {
-      toast({ title: "Geçersiz kullanıcı ID", variant: "destructive" });
+    const uid = String(newDmUserId).trim();
+    if (!uid) {
+      toast({ title: "Geçersiz kullanıcı", variant: "destructive" });
       return;
     }
     const fakeConvo: DmConvo = {
       withUserId: uid,
-      withUsername: newDmDisplayName || String(uid),
-      withDisplayName: newDmDisplayName || String(uid),
+      withUsername: newDmDisplayName || uid,
+      withDisplayName: newDmDisplayName || uid,
       withRole: "USER",
       lastMsg: "",
       lastAt: Date.now(),
@@ -325,7 +325,7 @@ export function FloatingChat() {
 
   function startDmWithUser(u: any) {
     const convo: DmConvo = {
-      withUserId: u.id,
+      withUserId: String(u.id),
       withUsername: u.username,
       withDisplayName: u.displayName || u.username,
       withRole: u.role || "USER",
@@ -478,7 +478,7 @@ export function FloatingChat() {
                     className="space-y-2"
                   >
                     {messages.map(m => {
-                      const mine = myId != null && m.userId === myId;
+                      const mine = myId !== "" && String(m.userId) === myId;
                       const badge = roleBadge(m.role);
                       return (
                         <div key={m.id} className={cn("group flex gap-2", mine ? "justify-end" : "justify-start")}>

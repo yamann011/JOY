@@ -19,11 +19,10 @@ import {
   Play,
   Pause,
   Send,
-  Trash2,
-  RefreshCw,
   Tv2,
   ChevronLeft,
   Crown,
+  Settings,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -105,6 +104,10 @@ export default function CinemaPage() {
   const [joinPass, setJoinPass] = useState("");
   const [showChangeUrl, setShowChangeUrl] = useState(false);
   const [newUrl, setNewUrl] = useState("");
+  const [showRoomSettings, setShowRoomSettings] = useState(false);
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsPass, setSettingsPass] = useState("");
+  const [settingsClearPass, setSettingsClearPass] = useState(false);
 
   const canModerate = () => {
     if (!user) return false;
@@ -242,6 +245,26 @@ export default function CinemaPage() {
     setNewUrl(""); setShowChangeUrl(false);
   };
   const handleDeleteRoom = (roomId: string) => socketRef.current?.emit("cinema:delete_room", { roomId });
+  const handleRoomSettingsSave = () => {
+    if (settingsName.trim()) {
+      socketRef.current?.emit("cinema:update_room", { name: settingsName.trim() });
+      setCurrentRoom(prev => prev ? { ...prev, name: settingsName.trim() } : prev);
+    }
+    if (settingsClearPass) {
+      socketRef.current?.emit("cinema:set_password", { password: "" });
+      setCurrentRoom(prev => prev ? { ...prev, hasPassword: false } : prev);
+    } else if (settingsPass.trim()) {
+      socketRef.current?.emit("cinema:set_password", { password: settingsPass.trim() });
+      setCurrentRoom(prev => prev ? { ...prev, hasPassword: true } : prev);
+    }
+    if (newUrl.trim()) {
+      socketRef.current?.emit("cinema:change_url", { videoUrl: newUrl.trim() });
+      setNewUrl("");
+    }
+    setShowRoomSettings(false);
+    setSettingsPass("");
+    setSettingsClearPass(false);
+  };
   const leaveRoom = () => { setCurrentRoom(null); setVideoState(null); setMessages([]); setParticipants([]); };
 
   // ─── ROOM VIEW ────────────────────────────────────────────────────────────
@@ -262,14 +285,10 @@ export default function CinemaPage() {
             <Users className="w-3 h-3 mr-1" />{currentRoom.participantCount}
           </Badge>
           {(isOwner || canModerate()) && (
-            <>
-              <Button size="sm" variant="outline" className="border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10 text-xs px-2 h-7 shrink-0" onClick={() => { setNewUrl(videoState.videoUrl); setShowChangeUrl(true); }}>
-                <RefreshCw className="w-3 h-3 mr-1" /> URL
-              </Button>
-              <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-500/10 h-7 w-7 p-0 shrink-0" onClick={() => handleDeleteRoom(currentRoom.id)}>
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </>
+            <Button size="sm" variant="outline" className="border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10 text-xs px-2 h-7 shrink-0"
+              onClick={() => { setSettingsName(currentRoom.name); setSettingsPass(""); setSettingsClearPass(false); setNewUrl(videoState.videoUrl); setShowRoomSettings(true); }}>
+              <Settings className="w-3 h-3 mr-1" /> Ayarlar
+            </Button>
           )}
         </div>
 
@@ -338,12 +357,32 @@ export default function CinemaPage() {
           </div>
         </div>
 
-        <Dialog open={showChangeUrl} onOpenChange={setShowChangeUrl}>
+        <Dialog open={showRoomSettings} onOpenChange={setShowRoomSettings}>
           <DialogContent className="bg-[#111] border-yellow-500/30 text-white">
-            <DialogHeader><DialogTitle className="text-yellow-400">Video URL Değiştir</DialogTitle></DialogHeader>
-            <Input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..."
-              className="bg-white/5 border-yellow-500/20 text-white" />
-            <Button onClick={handleChangeUrl} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold w-full">Değiştir</Button>
+            <DialogHeader><DialogTitle className="text-yellow-400">Oda Ayarları</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-yellow-500/70 mb-1 block">Oda Başlığı</label>
+                <Input value={settingsName} onChange={e => setSettingsName(e.target.value)} placeholder="Oda adı..."
+                  className="bg-white/5 border-yellow-500/20 text-white" />
+              </div>
+              <div>
+                <label className="text-xs text-yellow-500/70 mb-1 block">Video URL</label>
+                <Input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..."
+                  className="bg-white/5 border-yellow-500/20 text-white" />
+              </div>
+              <div>
+                <label className="text-xs text-yellow-500/70 mb-1 block">Yeni Şifre (boş bırakırsan değişmez)</label>
+                <Input value={settingsPass} onChange={e => { setSettingsPass(e.target.value); setSettingsClearPass(false); }}
+                  placeholder="Şifre..." type="password" className="bg-white/5 border-yellow-500/20 text-white" />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-yellow-300">
+                <input type="checkbox" checked={settingsClearPass} onChange={e => { setSettingsClearPass(e.target.checked); if (e.target.checked) setSettingsPass(""); }}
+                  className="accent-yellow-400" />
+                Şifreyi kaldır (herkese açık)
+              </label>
+              <Button onClick={handleRoomSettingsSave} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold w-full">Kaydet</Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -434,11 +473,6 @@ export default function CinemaPage() {
                     >
                       {room.hasPassword ? <><Lock className="w-3 h-3 mr-1" /> Katıl</> : <><Play className="w-3 h-3 mr-1" /> Katıl</>}
                     </Button>
-                    {canModerate() && (
-                      <Button size="icon" variant="ghost" className="text-red-400 hover:bg-red-500/10 shrink-0" onClick={() => handleDeleteRoom(room.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
                   </div>
                 </CardContent>
               </Card>

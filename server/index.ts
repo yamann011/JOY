@@ -30,17 +30,17 @@ const bannedUserIds = new Set<number>();
 // ─── DM (Özel Mesaj) RAM store ─────────────────────────────────────────────
 type DmMsg = {
   id: string;
-  fromUserId: number;
+  fromUserId: string;
   fromUsername: string;
   fromDisplayName: string;
   fromRole: string;
-  toUserId: number;
+  toUserId: string;
   text: string;
   createdAt: number;
   read: boolean;
 };
 
-function dmKey(a: number, b: number) {
+function dmKey(a: string, b: string) {
   return a < b ? `${a}_${b}` : `${b}_${a}`;
 }
 
@@ -149,30 +149,27 @@ io.on("connection", (socket) => {
   socket.join("global");
 
   // userId → socketId haritası güncelle
-  if (u.userId > 0) userSocketMap.set(String(u.userId), socket.id);
+  const myIdStr = String(u.userId);
+  if (myIdStr) userSocketMap.set(myIdStr, socket.id);
 
   // İlk bağlanınca son mesajları + konuşma listesini gönder
   socket.emit("chat:init", { messages: recentMessages });
 
   // DM konuşma listesini gönder
-  if (u.userId > 0) {
-    const convos: { withUserId: number; withUsername: string; withDisplayName: string; withRole: string; lastMsg: string; lastAt: number; unread: number }[] = [];
+  if (myIdStr) {
+    const convos: { withUserId: string; withUsername: string; withDisplayName: string; withRole: string; lastMsg: string; lastAt: number; unread: number }[] = [];
     for (const [key, msgs] of dmMessages.entries()) {
-      const parts = key.split("_").map(Number);
-      if (!parts.includes(u.userId)) continue;
-      const otherId = parts[0] === u.userId ? parts[1] : parts[0];
+      const parts = key.split("_");
+      if (!parts.includes(myIdStr)) continue;
+      const otherId = parts[0] === myIdStr ? parts[1] : parts[0];
       const last = msgs[msgs.length - 1];
       if (!last) continue;
-      const unread = msgs.filter(m => m.toUserId === u.userId && !m.read).length;
-      const other = last.fromUserId === u.userId
-        ? { username: last.fromUsername, displayName: last.fromDisplayName, role: last.fromRole }
-        : { username: last.fromUsername, displayName: last.fromDisplayName, role: last.fromRole };
-      // find the "other" side info
+      const unread = msgs.filter(m => m.toUserId === myIdStr && !m.read).length;
       const otherMsg = msgs.find(m => m.fromUserId === otherId);
       convos.push({
         withUserId: otherId,
-        withUsername: otherMsg?.fromUsername ?? String(otherId),
-        withDisplayName: otherMsg?.fromDisplayName ?? String(otherId),
+        withUsername: otherMsg?.fromUsername ?? otherId,
+        withDisplayName: otherMsg?.fromDisplayName ?? otherId,
         withRole: otherMsg?.fromRole ?? "USER",
         lastMsg: last.text,
         lastAt: last.createdAt,
@@ -404,13 +401,13 @@ io.on("connection", (socket) => {
   });
 
   // ─── DM: Özel Mesaj Gönder ────────────────────────────────────────────────
-  socket.on("dm:send", async (payload: { toUserId?: number; text?: string }) => {
-    if (u.userId <= 0) {
+  socket.on("dm:send", async (payload: { toUserId?: string; text?: string }) => {
+    if (!myIdStr) {
       socket.emit("dm:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
       return;
     }
-    const toUserId = Number(payload?.toUserId);
-    if (!Number.isFinite(toUserId) || toUserId <= 0 || toUserId === u.userId) {
+    const toUserId = String(payload?.toUserId || "").trim();
+    if (!toUserId || toUserId === myIdStr) {
       socket.emit("dm:error", { code: "INVALID", message: "Geçersiz hedef." });
       return;
     }
@@ -418,7 +415,7 @@ io.on("connection", (socket) => {
     if (!text) return;
 
     const myRole = u.role.toLowerCase();
-    const key = dmKey(u.userId, toUserId);
+    const key = dmKey(myIdStr, toUserId);
     const existing = dmMessages.get(key) || [];
 
     // Yeni konuşma başlatma yetkisi: sadece ADMIN ve AJANS_SAHIBI
@@ -430,7 +427,7 @@ io.on("connection", (socket) => {
 
     const msg: DmMsg = {
       id: `${Date.now()}-${Math.random()}`,
-      fromUserId: u.userId,
+      fromUserId: myIdStr,
       fromUsername: u.username,
       fromDisplayName: u.displayName,
       fromRole: u.role,
@@ -448,12 +445,12 @@ io.on("connection", (socket) => {
     socket.emit("dm:message", msg);
 
     // Alıcı online ise gönder
-    const targetSocketId = userSocketMap.get(String(toUserId));
+    const targetSocketId = userSocketMap.get(toUserId);
     if (targetSocketId) {
       io.to(targetSocketId).emit("dm:message", msg);
       // Alıcıya konuşma listesini güncelle
       io.to(targetSocketId).emit("dm:conversation_update", {
-        withUserId: u.userId,
+        withUserId: myIdStr,
         withUsername: u.username,
         withDisplayName: u.displayName,
         withRole: u.role,
@@ -466,8 +463,8 @@ io.on("connection", (socket) => {
     // Gönderenin conversation listesini güncelle
     socket.emit("dm:conversation_update", {
       withUserId: toUserId,
-      withUsername: existing.find(m => m.fromUserId === toUserId)?.fromUsername ?? String(toUserId),
-      withDisplayName: existing.find(m => m.fromUserId === toUserId)?.fromDisplayName ?? String(toUserId),
+      withUsername: existing.find(m => m.fromUserId === toUserId)?.fromUsername ?? toUserId,
+      withDisplayName: existing.find(m => m.fromUserId === toUserId)?.fromDisplayName ?? toUserId,
       withRole: existing.find(m => m.fromUserId === toUserId)?.fromRole ?? "USER",
       lastMsg: text,
       lastAt: msg.createdAt,
@@ -476,40 +473,39 @@ io.on("connection", (socket) => {
   });
 
   // DM geçmişini getir
-  socket.on("dm:history", (payload: { withUserId?: number }) => {
-    if (u.userId <= 0) return;
-    const withUserId = Number(payload?.withUserId);
-    if (!Number.isFinite(withUserId)) return;
+  socket.on("dm:history", (payload: { withUserId?: string }) => {
+    if (!myIdStr) return;
+    const withUserId = String(payload?.withUserId || "").trim();
+    if (!withUserId) return;
 
-    const key = dmKey(u.userId, withUserId);
+    const key = dmKey(myIdStr, withUserId);
     const msgs = dmMessages.get(key) || [];
 
     // Okunmamışları oku
     for (const m of msgs) {
-      if (m.toUserId === u.userId) m.read = true;
+      if (m.toUserId === myIdStr) m.read = true;
     }
 
     socket.emit("dm:history", { withUserId, messages: msgs.slice(-100) });
   });
 
   // DM okundu bildir
-  socket.on("dm:read", (payload: { withUserId?: number }) => {
-    if (u.userId <= 0) return;
-    const withUserId = Number(payload?.withUserId);
-    if (!Number.isFinite(withUserId)) return;
-    const key = dmKey(u.userId, withUserId);
+  socket.on("dm:read", (payload: { withUserId?: string }) => {
+    if (!myIdStr) return;
+    const withUserId = String(payload?.withUserId || "").trim();
+    if (!withUserId) return;
+    const key = dmKey(myIdStr, withUserId);
     const msgs = dmMessages.get(key) || [];
     for (const m of msgs) {
-      if (m.toUserId === u.userId) m.read = true;
+      if (m.toUserId === myIdStr) m.read = true;
     }
     socket.emit("dm:read_ack", { withUserId });
   });
 
   // Disconnect: userSocketMap temizle
   socket.on("disconnect", () => {
-    const key = String(u.userId);
-    if (u.userId > 0 && userSocketMap.get(key) === socket.id) {
-      userSocketMap.delete(key);
+    if (myIdStr && userSocketMap.get(myIdStr) === socket.id) {
+      userSocketMap.delete(myIdStr);
     }
   });
 });
@@ -773,6 +769,41 @@ cinemaIO.on("connection", (socket) => {
   });
 
   // Odayı sil (admin/mod)
+  socket.on("cinema:update_room", (payload: { name?: string }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    const role = u.role.toLowerCase();
+    const isOwner = u.userId && u.userId === room.createdByUserId;
+    if (!isOwner && !role.includes("admin") && !role.includes("moder") && !role.includes("ajans")) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Yetkin yok." });
+      return;
+    }
+    if (payload?.name?.trim()) room.name = payload.name.trim();
+    cinemaIO.emit("cinema:room_list_update", Array.from(cinemaRooms.values()).map(r => ({
+      id: r.id, name: r.name, hasPassword: !!r.passwordHash, videoUrl: r.videoUrl,
+      participantCount: r.participants.size, createdByUserId: r.createdByUserId,
+    })));
+  });
+
+  socket.on("cinema:set_password", (payload: { password?: string }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    const role = u.role.toLowerCase();
+    const isOwner = u.userId && u.userId === room.createdByUserId;
+    if (!isOwner && !role.includes("admin") && !role.includes("ajans")) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Yetkin yok." });
+      return;
+    }
+    const pw = String(payload?.password || "").trim();
+    room.passwordHash = pw ? require("crypto").createHash("sha256").update(pw).digest("hex") : undefined;
+    cinemaIO.emit("cinema:room_list_update", Array.from(cinemaRooms.values()).map(r => ({
+      id: r.id, name: r.name, hasPassword: !!r.passwordHash, videoUrl: r.videoUrl,
+      participantCount: r.participants.size, createdByUserId: r.createdByUserId,
+    })));
+  });
+
   socket.on("cinema:delete_room", (payload: { roomId?: string }) => {
     const rid = String(payload?.roomId || currentRoomId || "");
     const role = u.role.toLowerCase();
@@ -798,16 +829,9 @@ cinemaIO.on("connection", (socket) => {
           count: room.participants.size,
           participants: Array.from(room.participants.values()),
         });
-        // Oda boşsa sil (5dk sonra)
+        // Oda boşalınca sadece katılımcı sayısı güncellenir, oda silinmez (kalıcı oda)
         if (room.participants.size === 0) {
-          setTimeout(() => {
-            const r = cinemaRooms.get(currentRoomId!);
-            if (r && r.participants.size === 0) {
-              cinemaRooms.delete(currentRoomId!);
-              cinemaRoomMessages.delete(currentRoomId!);
-              cinemaIO.emit("cinema:room_removed", { roomId: currentRoomId });
-            }
-          }, 5 * 60 * 1000);
+          cinemaIO.emit("cinema:room_updated", { roomId: currentRoomId, participantCount: 0 });
         }
       }
     }
