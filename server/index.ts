@@ -27,6 +27,26 @@ const io = new SocketIOServer(httpServer, {
 const mutedUserIds = new Set<number>();
 const bannedUserIds = new Set<number>();
 
+// ─── DM (Özel Mesaj) RAM store ─────────────────────────────────────────────
+type DmMsg = {
+  id: string;
+  fromUserId: number;
+  fromUsername: string;
+  fromDisplayName: string;
+  fromRole: string;
+  toUserId: number;
+  text: string;
+  createdAt: number;
+  read: boolean;
+};
+
+function dmKey(a: number, b: number) {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+const dmMessages = new Map<string, DmMsg[]>();       // key → mesajlar
+const userSocketMap = new Map<number, string>();      // userId → socketId (son bağlanan)
+
 // Spam koruması - son mesaj zamanları (userId -> timestamp)
 const lastMessageTime = new Map<number, number>();
 const MESSAGE_COOLDOWN_MS = 5000; // 5 saniye
@@ -129,8 +149,39 @@ io.on("connection", (socket) => {
 
   socket.join("global");
 
-  // İlk bağlanınca son mesajları gönder
+  // userId → socketId haritası güncelle
+  if (u.userId > 0) userSocketMap.set(u.userId, socket.id);
+
+  // İlk bağlanınca son mesajları + konuşma listesini gönder
   socket.emit("chat:init", { messages: recentMessages });
+
+  // DM konuşma listesini gönder
+  if (u.userId > 0) {
+    const convos: { withUserId: number; withUsername: string; withDisplayName: string; withRole: string; lastMsg: string; lastAt: number; unread: number }[] = [];
+    for (const [key, msgs] of dmMessages.entries()) {
+      const parts = key.split("_").map(Number);
+      if (!parts.includes(u.userId)) continue;
+      const otherId = parts[0] === u.userId ? parts[1] : parts[0];
+      const last = msgs[msgs.length - 1];
+      if (!last) continue;
+      const unread = msgs.filter(m => m.toUserId === u.userId && !m.read).length;
+      const other = last.fromUserId === u.userId
+        ? { username: last.fromUsername, displayName: last.fromDisplayName, role: last.fromRole }
+        : { username: last.fromUsername, displayName: last.fromDisplayName, role: last.fromRole };
+      // find the "other" side info
+      const otherMsg = msgs.find(m => m.fromUserId === otherId);
+      convos.push({
+        withUserId: otherId,
+        withUsername: otherMsg?.fromUsername ?? String(otherId),
+        withDisplayName: otherMsg?.fromDisplayName ?? String(otherId),
+        withRole: otherMsg?.fromRole ?? "USER",
+        lastMsg: last.text,
+        lastAt: last.createdAt,
+        unread,
+      });
+    }
+    socket.emit("dm:conversations", convos);
+  }
 
   // Mesaj gönderme
   socket.on("chat:message", (payload: { text?: string; replyTo?: string; avatar?: string }) => {
@@ -351,6 +402,115 @@ io.on("connection", (socket) => {
       targetId,
       by: u.username,
     });
+  });
+
+  // ─── DM: Özel Mesaj Gönder ────────────────────────────────────────────────
+  socket.on("dm:send", async (payload: { toUserId?: number; text?: string }) => {
+    if (u.userId <= 0) {
+      socket.emit("dm:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
+      return;
+    }
+    const toUserId = Number(payload?.toUserId);
+    if (!Number.isFinite(toUserId) || toUserId <= 0 || toUserId === u.userId) {
+      socket.emit("dm:error", { code: "INVALID", message: "Geçersiz hedef." });
+      return;
+    }
+    const text = String(payload?.text || "").trim();
+    if (!text) return;
+
+    const myRole = u.role.toLowerCase();
+    const key = dmKey(u.userId, toUserId);
+    const existing = dmMessages.get(key) || [];
+
+    // Yeni konuşma başlatma yetkisi: sadece ADMIN ve AJANS_SAHIBI
+    const canStartDm = myRole.includes("admin") || myRole.includes("ajans");
+    if (existing.length === 0 && !canStartDm) {
+      socket.emit("dm:error", { code: "NO_PERMISSION", message: "Özel mesaj açma yetkin yok. Sadece Admin ve Ajans Sahibi başlatabilir." });
+      return;
+    }
+
+    const msg: DmMsg = {
+      id: `${Date.now()}-${Math.random()}`,
+      fromUserId: u.userId,
+      fromUsername: u.username,
+      fromDisplayName: u.displayName,
+      fromRole: u.role,
+      toUserId,
+      text,
+      createdAt: Date.now(),
+      read: false,
+    };
+
+    existing.push(msg);
+    if (existing.length > 200) existing.shift();
+    dmMessages.set(key, existing);
+
+    // Gönderene confirm
+    socket.emit("dm:message", msg);
+
+    // Alıcı online ise gönder
+    const targetSocketId = userSocketMap.get(toUserId);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("dm:message", msg);
+      // Alıcıya konuşma listesini güncelle
+      io.to(targetSocketId).emit("dm:conversation_update", {
+        withUserId: u.userId,
+        withUsername: u.username,
+        withDisplayName: u.displayName,
+        withRole: u.role,
+        lastMsg: text,
+        lastAt: msg.createdAt,
+        unread: existing.filter(m => m.toUserId === toUserId && !m.read).length,
+      });
+    }
+
+    // Gönderenin conversation listesini güncelle
+    socket.emit("dm:conversation_update", {
+      withUserId: toUserId,
+      withUsername: existing.find(m => m.fromUserId === toUserId)?.fromUsername ?? String(toUserId),
+      withDisplayName: existing.find(m => m.fromUserId === toUserId)?.fromDisplayName ?? String(toUserId),
+      withRole: existing.find(m => m.fromUserId === toUserId)?.fromRole ?? "USER",
+      lastMsg: text,
+      lastAt: msg.createdAt,
+      unread: 0,
+    });
+  });
+
+  // DM geçmişini getir
+  socket.on("dm:history", (payload: { withUserId?: number }) => {
+    if (u.userId <= 0) return;
+    const withUserId = Number(payload?.withUserId);
+    if (!Number.isFinite(withUserId)) return;
+
+    const key = dmKey(u.userId, withUserId);
+    const msgs = dmMessages.get(key) || [];
+
+    // Okunmamışları oku
+    for (const m of msgs) {
+      if (m.toUserId === u.userId) m.read = true;
+    }
+
+    socket.emit("dm:history", { withUserId, messages: msgs.slice(-100) });
+  });
+
+  // DM okundu bildir
+  socket.on("dm:read", (payload: { withUserId?: number }) => {
+    if (u.userId <= 0) return;
+    const withUserId = Number(payload?.withUserId);
+    if (!Number.isFinite(withUserId)) return;
+    const key = dmKey(u.userId, withUserId);
+    const msgs = dmMessages.get(key) || [];
+    for (const m of msgs) {
+      if (m.toUserId === u.userId) m.read = true;
+    }
+    socket.emit("dm:read_ack", { withUserId });
+  });
+
+  // Disconnect: userSocketMap temizle
+  socket.on("disconnect", () => {
+    if (u.userId > 0 && userSocketMap.get(u.userId) === socket.id) {
+      userSocketMap.delete(u.userId);
+    }
   });
 });
 
