@@ -5,6 +5,10 @@
   "author": "Your Name",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  },
   "scripts": {
     "dev": "set NODE_ENV=development&& tsx server/index.ts",
     "build": "tsx script/build.ts",
