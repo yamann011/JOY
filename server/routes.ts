@@ -40,9 +40,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const isProd = process.env.NODE_ENV === "production";
   const cookieSecure = process.env.COOKIE_SECURE === "true" || (isProd && process.env.DISABLE_SECURE_COOKIE !== "true");
 
-  // ✅ www <-> apex arası login uçmasın diye
-  // Railway'de COOKIE_DOMAIN değişkeni yoksa prod'da otomatik .erhan.online kullanır
-  const cookieDomain = process.env.COOKIE_DOMAIN || (isProd ? ".erhan.online" : undefined);
+  // COOKIE_DOMAIN env varsa kullan, yoksa domain kısıtlama yok (railway.app, render.com vs. için)
+  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
 
   app.use(
     session({
