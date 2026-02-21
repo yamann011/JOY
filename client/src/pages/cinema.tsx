@@ -163,6 +163,7 @@ function CinemaAvatar({ name, avatar, role }: { name: string; avatar?: string; r
 export default function CinemaPage() {
   const { hasAnnouncement } = useAnnouncement();
   const topBarOffset = hasAnnouncement ? 96 : 64;
+  const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
 
   const socketRef = useRef<Socket | null>(null);
@@ -217,7 +218,25 @@ export default function CinemaPage() {
     });
     socketRef.current = socket;
 
-    socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => setRooms(data));
+    socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => {
+      setRooms(data);
+      // F5 koruması — son odaya otomatik geri katıl (şifresiz odalar veya oda sahibi)
+      try {
+        const saved = localStorage.getItem("cinema_last_room");
+        if (saved) {
+          const savedRoom: CinemaRoomInfo = JSON.parse(saved);
+          const found = data.find(r => r.id === savedRoom.id);
+          if (found) {
+            setTimeout(() => {
+              socket.emit("cinema:join", { roomId: found.id, password: "" });
+              setCurrentRoom(found);
+            }, 400);
+          } else {
+            localStorage.removeItem("cinema_last_room");
+          }
+        }
+      } catch {}
+    });
     socket.on("cinema:room_added", (room: CinemaRoomInfo) =>
       setRooms(prev => [...prev.filter(r => r.id !== room.id), room])
     );
@@ -287,6 +306,16 @@ export default function CinemaPage() {
     setMessages([]); setParticipants([]);
     socketRef.current?.emit("cinema:join", { roomId: room.id, password });
     setCurrentRoom(room);
+    // F5 koruması — oda bilgisini localStorage'a kaydet
+    try { localStorage.setItem("cinema_last_room", JSON.stringify({ id: room.id, name: room.name, hasPassword: room.hasPassword, createdByUserId: room.createdByUserId })); } catch {}
+  };
+
+  const leaveRoom = () => {
+    socketRef.current?.emit("cinema:leave");
+    setCurrentRoom(null);
+    setVideoState(null);
+    setMessages([]);
+    try { localStorage.removeItem("cinema_last_room"); } catch {}
   };
 
   const handleJoinClick = (room: CinemaRoomInfo) => {
@@ -347,7 +376,6 @@ export default function CinemaPage() {
     setSettingsPass("");
     setSettingsClearPass(false);
   };
-  const leaveRoom = () => { setCurrentRoom(null); setVideoState(null); setMessages([]); setParticipants([]); };
 
   // ─── ROOM VIEW ────────────────────────────────────────────────────────────
   if (currentRoom && videoState) {
@@ -355,10 +383,10 @@ export default function CinemaPage() {
     const isOwner = String((user as any)?.id) === videoState.createdByUserId;
     const showControls = canControlVideo(videoState);
     return (
-      <div className="flex flex-col bg-[#0a0a0a] text-white overflow-hidden" style={{ height: "100dvh" }}>
-        {/* Top bar — hamburger + app kontrolleri altında, sağda da sabit app ikonları için boşluk */}
-        <div className="flex items-center gap-2 px-3 pl-10 pr-44 py-2 bg-black border-b border-yellow-500/20 shrink-0 min-h-[48px]"
-          style={{ marginTop: `${topBarOffset}px` }}>
+      <div className="flex flex-col bg-[#0a0a0a] text-white" style={{ height: "100dvh", paddingTop: `${topBarOffset + 48}px` }}>
+        {/* Top bar — fixed, hamburger + ticker altında */}
+        <div className="fixed left-0 right-0 z-40 flex items-center gap-2 pl-10 pr-44 py-2 bg-black border-b border-yellow-500/20 min-h-[48px]"
+          style={{ top: `${topBarOffset}px` }}>
           <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 w-8">
             <ChevronLeft className="w-5 h-5" />
           </Button>
