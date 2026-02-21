@@ -1,7 +1,6 @@
 import * as React from "react";
 import { useLocation } from "wouter";
 import { io, type Socket } from "socket.io-client";
-import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { AnimatedUsername } from "@/components/animated-username";
@@ -78,6 +77,13 @@ export function FloatingChat() {
   const [location] = useLocation();
   if (location === "/login") return null;
 
+  // ── Rol hesapları — useEffect'lerden ÖNCE tanımlanmalı ────────────────────
+  const myId = Number((user as any)?.id);
+  const myRole = String((user as any)?.role || "").toLowerCase();
+  const canModerate = !!user && (myRole.includes("admin") || myRole.includes("vip") || myRole.includes("moder") || myRole.includes("ajans") || myRole.includes("asistan"));
+  const canNuke = !!user && (myRole.includes("admin") || myRole.includes("vip") || myRole.includes("ajans"));
+  const canStartDm = !!user && (myRole.includes("admin") || myRole.includes("ajans"));
+
   // ── Panel state ────────────────────────────────────────────────────────────
   const [open, setOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"global" | "dm">("global");
@@ -103,24 +109,22 @@ export function FloatingChat() {
   const [newDmUserId, setNewDmUserId] = React.useState("");
   const [newDmDisplayName, setNewDmDisplayName] = React.useState("");
   const [userSearch, setUserSearch] = React.useState("");
+  const [allUsers, setAllUsers] = React.useState<any[]>([]);
 
-  // Kullanıcı rehberi — sadece admin/ajans görebilir
-  const { data: allUsers = [] } = useQuery<any[]>({
-    queryKey: ["/api/users"],
-    enabled: canStartDm && showNewDm,
-    staleTime: 30000,
-  });
+  // Kullanıcı listesini DM paneli açıldığında çek
+  React.useEffect(() => {
+    if (!showNewDm || !canStartDm) return;
+    fetch("/api/users", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAllUsers(Array.isArray(data) ? data : []))
+      .catch(() => setAllUsers([]));
+  }, [showNewDm, canStartDm]);
+
   const filteredUsers = allUsers.filter((u: any) => {
     if (!userSearch.trim()) return true;
     const q = userSearch.toLowerCase();
     return (u.displayName || "").toLowerCase().includes(q) || (u.username || "").toLowerCase().includes(q);
   });
-
-  const myId = Number((user as any)?.id);
-  const myRole = String((user as any)?.role || "").toLowerCase();
-  const canModerate = !!user && (myRole.includes("admin") || myRole.includes("vip") || myRole.includes("moder") || myRole.includes("ajans") || myRole.includes("asistan"));
-  const canNuke = !!user && (myRole.includes("admin") || myRole.includes("vip") || myRole.includes("ajans"));
-  const canStartDm = !!user && (myRole.includes("admin") || myRole.includes("ajans"));
 
   const socketRef = React.useRef<Socket | null>(null);
   const globalEndRef = React.useRef<HTMLDivElement | null>(null);

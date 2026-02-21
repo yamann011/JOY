@@ -45,7 +45,7 @@ function dmKey(a: number, b: number) {
 }
 
 const dmMessages = new Map<string, DmMsg[]>();       // key → mesajlar
-const userSocketMap = new Map<number, string>();      // userId → socketId (son bağlanan)
+const userSocketMap = new Map<string, string>();      // userId(string) → socketId
 
 // Spam koruması - son mesaj zamanları (userId -> timestamp)
 const lastMessageTime = new Map<number, number>();
@@ -114,7 +114,6 @@ io.use((socket, next) => {
 
     const rawId = (auth as any).userId;
     const userId = Number(rawId);
-
     const username = String((auth as any).username || "Misafir");
     const displayName = String((auth as any).displayName || username);
     const role = String((auth as any).role || "guest");
@@ -150,7 +149,7 @@ io.on("connection", (socket) => {
   socket.join("global");
 
   // userId → socketId haritası güncelle
-  if (u.userId > 0) userSocketMap.set(u.userId, socket.id);
+  if (u.userId > 0) userSocketMap.set(String(u.userId), socket.id);
 
   // İlk bağlanınca son mesajları + konuşma listesini gönder
   socket.emit("chat:init", { messages: recentMessages });
@@ -449,7 +448,7 @@ io.on("connection", (socket) => {
     socket.emit("dm:message", msg);
 
     // Alıcı online ise gönder
-    const targetSocketId = userSocketMap.get(toUserId);
+    const targetSocketId = userSocketMap.get(String(toUserId));
     if (targetSocketId) {
       io.to(targetSocketId).emit("dm:message", msg);
       // Alıcıya konuşma listesini güncelle
@@ -508,36 +507,9 @@ io.on("connection", (socket) => {
 
   // Disconnect: userSocketMap temizle
   socket.on("disconnect", () => {
-    if (u.userId > 0 && userSocketMap.get(u.userId) === socket.id) {
-      userSocketMap.delete(u.userId);
-    }
-    if (currentRoomId) {
-      const room = cinemaRooms.get(currentRoomId);
-      if (room) {
-        room.participants.delete(socket.id);
-        const participantList = Array.from(room.participants.values());
-        cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:participant_update", {
-          count: room.participants.size,
-          participants: participantList,
-        });
-        cinemaIO.emit("cinema:room_participants", {
-          roomId: currentRoomId,
-          participants: participantList,
-          count: room.participants.size,
-        });
-        if (room.participants.size === 0) {
-          // Oda sahibi çıktıysa userActiveRoom'dan temizle
-          if (room.createdByUserId) userActiveRoom.delete(room.createdByUserId);
-          setTimeout(() => {
-            const r = cinemaRooms.get(currentRoomId!);
-            if (r && r.participants.size === 0) {
-              cinemaRooms.delete(currentRoomId!);
-              cinemaRoomMessages.delete(currentRoomId!);
-              cinemaIO.emit("cinema:room_removed", { roomId: currentRoomId });
-            }
-          }, 5 * 60 * 1000);
-        }
-      }
+    const key = String(u.userId);
+    if (u.userId > 0 && userSocketMap.get(key) === socket.id) {
+      userSocketMap.delete(key);
     }
   });
 });
@@ -560,7 +532,7 @@ interface CinemaRoom {
 
 interface CinemaMsg {
   id: string;
-  userId: number;
+  userId: string;
   username: string;
   displayName: string;
   role: string;
