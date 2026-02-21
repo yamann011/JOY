@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/lib/auth-context";
+import { useAnnouncement } from "@/hooks/use-announcement";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -160,7 +161,8 @@ function CinemaAvatar({ name, avatar, role }: { name: string; avatar?: string; r
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export default function CinemaPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { hasAnnouncement } = useAnnouncement();
+  const topBarOffset = hasAnnouncement ? 84 : 56;
   const { toast } = useToast();
 
   const socketRef = useRef<Socket | null>(null);
@@ -354,8 +356,9 @@ export default function CinemaPage() {
     const showControls = canControlVideo(videoState);
     return (
       <div className="flex flex-col bg-[#0a0a0a] text-white overflow-hidden" style={{ height: "100dvh" }}>
-        {/* Top bar — hamburger menü altında (mt-16 ile kaymaz) */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-black border-b border-yellow-500/20 shrink-0 mt-16 min-h-[48px]">
+        {/* Top bar — hamburger menü altında (dinamik offset) */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-black border-b border-yellow-500/20 shrink-0 min-h-[48px]"
+          style={{ marginTop: `${topBarOffset}px` }}>
           <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 w-8">
             <ChevronLeft className="w-5 h-5" />
           </Button>
