@@ -50,7 +50,9 @@ export interface IStorage {
 
   getEvents(): Promise<Event[]>;
   getEvent(id: string): Promise<Event | undefined>;
-  createEvent(event: InsertEvent & { createdBy: string }): Promise<Event>;
+  createEvent(event: InsertEvent & { createdBy: string; isLive?: boolean }): Promise<Event>;
+  deleteEvent(id: string): Promise<void>;
+  updateEvent(id: string, data: Partial<Event>): Promise<Event | undefined>;
 
   getChatGroups(): Promise<ChatGroup[]>;
   getChatGroup(id: string): Promise<ChatGroup | undefined>;
@@ -183,7 +185,7 @@ export class DatabaseStorage implements IStorage {
     return event || undefined;
   }
 
-  async createEvent(event: InsertEvent & { createdBy: string }): Promise<Event> {
+  async createEvent(event: InsertEvent & { createdBy: string; isLive?: boolean }): Promise<Event> {
     const [newEvent] = await db
       .insert(events)
       .values({
@@ -191,18 +193,29 @@ export class DatabaseStorage implements IStorage {
         description: event.description ?? null,
         agencyName: event.agencyName,
         agencyLogo: event.agencyLogo ?? null,
+        coverImage: event.coverImage ?? null,
         participant1Name: event.participant1Name ?? null,
         participant1Avatar: event.participant1Avatar ?? null,
         participant2Name: event.participant2Name ?? null,
         participant2Avatar: event.participant2Avatar ?? null,
+        participantsData: event.participantsData ?? null,
         participantCount: 0,
         participants: [],
         scheduledAt: event.scheduledAt,
-        isLive: false,
+        isLive: event.isLive ?? false,
         createdBy: event.createdBy,
       })
       .returning();
     return newEvent;
+  }
+
+  async deleteEvent(id: string): Promise<void> {
+    await db.delete(events).where(eq(events.id, id));
+  }
+
+  async updateEvent(id: string, data: Partial<Event>): Promise<Event | undefined> {
+    const [updated] = await db.update(events).set(data).where(eq(events.id, id)).returning();
+    return updated;
   }
 
   async getChatGroups(): Promise<ChatGroup[]> {

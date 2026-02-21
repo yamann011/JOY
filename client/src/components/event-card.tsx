@@ -11,133 +11,112 @@ interface EventCardProps {
   onClick?: () => void;
 }
 
+type Participant = { name: string; avatar?: string };
+
+function parseParticipants(ev: Event): Participant[] {
+  // Try participantsData JSON first
+  if ((ev as any).participantsData) {
+    try {
+      const arr = JSON.parse((ev as any).participantsData);
+      if (Array.isArray(arr) && arr.length > 0) return arr.slice(0, 8);
+    } catch {}
+  }
+  // Fall back to legacy participant1/2 fields
+  const result: Participant[] = [];
+  if (ev.participant1Name) result.push({ name: ev.participant1Name, avatar: ev.participant1Avatar || undefined });
+  if (ev.participant2Name) result.push({ name: ev.participant2Name, avatar: ev.participant2Avatar || undefined });
+  return result;
+}
+
 export function EventCard({ event, onClick }: EventCardProps) {
   const scheduledDate = new Date(event.scheduledAt);
   const formattedDate = format(scheduledDate, "d MMMM yyyy", { locale: tr });
   const formattedTime = format(scheduledDate, "HH:mm", { locale: tr });
-
-  const hasVSParticipants = event.participant1Name && event.participant2Name;
+  const participants = parseParticipants(event);
+  const hasCover = !!(event as any).coverImage;
 
   return (
     <Card
-      className={`relative overflow-visible ${
-        event.isLive ? "gold-glow border-primary" : "border-border"
-      } hover-elevate cursor-pointer transition-all duration-200`}
+      className={`relative overflow-hidden ${event.isLive ? "gold-glow border-primary" : "border-border"} hover-elevate cursor-pointer transition-all duration-200`}
       onClick={onClick}
       data-testid={`event-card-${event.id}`}
     >
       {event.isLive && (
-        <Badge
-          className="absolute -top-2 -right-2 bg-red-500 text-white animate-pulse z-10"
-          data-testid="badge-live"
-        >
-          CANLI
-        </Badge>
+        <Badge className="absolute top-2 right-2 bg-red-500 text-white animate-pulse z-10">CANLI</Badge>
       )}
 
-      {hasVSParticipants ? (
-        <div className="p-4">
-          <div className="text-center mb-4">
-            <Badge variant="outline" className="mb-2">{event.agencyName}</Badge>
-            <h3 className="font-bold text-lg text-primary" data-testid="text-event-title">
-              {event.title}
-            </h3>
-          </div>
+      {/* Kapak resmi */}
+      {hasCover && (
+        <div className="w-full h-32 overflow-hidden">
+          <img src={(event as any).coverImage} alt={event.title} className="w-full h-full object-cover" />
+        </div>
+      )}
 
-          <div className="flex items-center justify-center gap-4 py-6 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 rounded-lg">
-            <div className="flex flex-col items-center gap-2">
-              <Avatar className={`w-20 h-20 border-3 ${event.isLive ? "border-primary ring-2 ring-primary/50" : "border-muted"}`}>
-                <AvatarImage src={event.participant1Avatar || undefined} />
-                <AvatarFallback className="bg-primary/20 text-primary font-bold text-xl">
-                  {event.participant1Name?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <span className="font-semibold text-sm text-center max-w-[80px] truncate">
-                {event.participant1Name}
-              </span>
-            </div>
-
-            <div className="flex flex-col items-center gap-1">
-              <Swords className="w-8 h-8 text-primary" />
-              <span className="text-2xl font-black text-gradient-gold">VS</span>
-            </div>
-
-            <div className="flex flex-col items-center gap-2">
-              <Avatar className={`w-20 h-20 border-3 ${event.isLive ? "border-primary ring-2 ring-primary/50" : "border-muted"}`}>
-                <AvatarImage src={event.participant2Avatar || undefined} />
-                <AvatarFallback className="bg-primary/20 text-primary font-bold text-xl">
-                  {event.participant2Name?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <span className="font-semibold text-sm text-center max-w-[80px] truncate">
-                {event.participant2Name}
-              </span>
-            </div>
-          </div>
-
+      <div className="p-4">
+        <div className="mb-3">
+          <Badge variant="outline" className="mb-1 text-xs">{event.agencyName}</Badge>
+          <h3 className="font-bold text-base text-primary leading-tight" data-testid="text-event-title">
+            {event.title}
+          </h3>
           {event.description && (
-            <p className="text-sm text-muted-foreground mt-4 text-center line-clamp-2">
-              {event.description}
-            </p>
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{event.description}</p>
           )}
-
-          <div className="flex items-center justify-center gap-4 mt-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Users className="w-4 h-4" />
-              <span data-testid="text-participant-count">{event.participantCount}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Calendar className="w-4 h-4" />
-              <span>{formattedDate}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
-              <span>{formattedTime}</span>
-            </div>
-          </div>
         </div>
-      ) : (
-        <div className="p-4 border-l-4 border-l-primary/50">
-          <div className="flex items-start gap-4">
-            <Avatar className={`w-16 h-16 border-2 ${event.isLive ? "border-primary" : "border-muted"}`}>
-              <AvatarImage src={event.agencyLogo || undefined} />
-              <AvatarFallback className="bg-primary/20 text-primary font-bold text-lg">
-                {event.agencyName.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
 
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-lg text-primary truncate" data-testid="text-event-title">
-                {event.title}
-              </h3>
-              <p className="text-sm text-muted-foreground" data-testid="text-agency-name">
-                {event.agencyName}
-              </p>
-
-              {event.description && (
-                <p className="text-sm text-foreground/70 mt-2 line-clamp-2">
-                  {event.description}
-                </p>
-              )}
-
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Users className="w-4 h-4" />
-                  <span data-testid="text-participant-count">{event.participantCount}</span>
-                </div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Calendar className="w-4 h-4" />
-                  <span>{formattedDate}</span>
-                </div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Clock className="w-4 h-4" />
-                  <span>{formattedTime}</span>
-                </div>
+        {/* Katılımcılar */}
+        {participants.length === 2 ? (
+          // VS düzeni — 2 kişi
+          <div className="flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 rounded-lg mb-3">
+            {participants.map((p, i) => (
+              <div key={i} className="flex flex-col items-center gap-1.5">
+                <Avatar className={`w-16 h-16 border-2 ${event.isLive ? "border-primary ring-2 ring-primary/40" : "border-muted"}`}>
+                  <AvatarImage src={p.avatar} />
+                  <AvatarFallback className="bg-primary/20 text-primary font-bold text-lg">
+                    {p.name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-xs font-semibold text-center max-w-[72px] truncate">{p.name}</span>
+                {i === 0 && (
+                  <div className="flex flex-col items-center -mt-1">
+                    <Swords className="w-6 h-6 text-primary" />
+                    <span className="text-lg font-black text-gradient-gold leading-none">VS</span>
+                  </div>
+                )}
               </div>
-            </div>
+            ))}
+          </div>
+        ) : participants.length > 0 ? (
+          // Grid düzeni — 3-8 kişi
+          <div className={`grid gap-2 mb-3 ${participants.length <= 4 ? "grid-cols-4" : "grid-cols-4"}`}>
+            {participants.map((p, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <Avatar className="w-12 h-12 border border-muted">
+                  <AvatarImage src={p.avatar} />
+                  <AvatarFallback className="bg-primary/20 text-primary font-bold">
+                    {p.name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-[10px] font-medium text-center w-full truncate">{p.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+          <div className="flex items-center gap-1">
+            <Users className="w-3 h-3" />
+            <span data-testid="text-participant-count">{participants.length || event.participantCount}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Calendar className="w-3 h-3" />
+            <span>{formattedDate}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            <span>{formattedTime}</span>
           </div>
         </div>
-      )}
+      </div>
     </Card>
   );
 }
@@ -145,25 +124,23 @@ export function EventCard({ event, onClick }: EventCardProps) {
 export function EventCardSkeleton() {
   return (
     <Card className="p-4">
-      <div className="text-center mb-4">
-        <div className="h-5 w-24 bg-muted rounded animate-pulse mx-auto mb-2" />
-        <div className="h-6 w-3/4 bg-muted rounded animate-pulse mx-auto" />
-      </div>
+      <div className="h-4 w-20 bg-muted rounded animate-pulse mb-2" />
+      <div className="h-6 w-3/4 bg-muted rounded animate-pulse mb-4" />
       <div className="flex items-center justify-center gap-4 py-6">
         <div className="flex flex-col items-center gap-2">
-          <div className="w-20 h-20 rounded-full bg-muted animate-pulse" />
-          <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+          <div className="w-16 h-16 rounded-full bg-muted animate-pulse" />
+          <div className="h-3 w-14 bg-muted rounded animate-pulse" />
         </div>
-        <div className="h-8 w-12 bg-muted rounded animate-pulse" />
+        <div className="h-8 w-10 bg-muted rounded animate-pulse" />
         <div className="flex flex-col items-center gap-2">
-          <div className="w-20 h-20 rounded-full bg-muted animate-pulse" />
-          <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+          <div className="w-16 h-16 rounded-full bg-muted animate-pulse" />
+          <div className="h-3 w-14 bg-muted rounded animate-pulse" />
         </div>
       </div>
       <div className="flex justify-center gap-4 mt-4">
-        <div className="h-4 w-16 bg-muted rounded animate-pulse" />
-        <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-        <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+        <div className="h-3 w-12 bg-muted rounded animate-pulse" />
+        <div className="h-3 w-20 bg-muted rounded animate-pulse" />
+        <div className="h-3 w-12 bg-muted rounded animate-pulse" />
       </div>
     </Card>
   );

@@ -25,10 +25,12 @@ export async function runMigrations() {
         description TEXT,
         agency_name TEXT NOT NULL,
         agency_logo TEXT,
+        cover_image TEXT,
         participant1_name TEXT,
         participant1_avatar TEXT,
         participant2_name TEXT,
         participant2_avatar TEXT,
+        participants_data TEXT,
         participant_count INTEGER NOT NULL DEFAULT 0,
         participants TEXT[],
         scheduled_at TIMESTAMP NOT NULL,
@@ -36,6 +38,9 @@ export async function runMigrations() {
         created_by VARCHAR NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS cover_image TEXT;
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS participants_data TEXT;
 
       CREATE TABLE IF NOT EXISTS chat_groups (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,

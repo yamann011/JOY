@@ -162,26 +162,44 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (role !== "ADMIN" && role !== "MOD" && role !== "AJANS_SAHIBI") {
       return res.status(403).json({ message: "Etkinlik oluşturma yetkin yok." });
     }
-    const { title, description, agencyName, scheduledAt, participant1Name, participant2Name, isLive } = req.body;
+    const { title, description, agencyName, coverImage, scheduledAt, participantsData, isLive } = req.body;
     if (!title || !agencyName || !scheduledAt) {
       return res.status(400).json({ message: "Başlık, ajans adı ve tarih zorunludur." });
     }
+    // participantsData: JSON string array of {name, avatar}
+    let parsedParticipants: Array<{ name: string; avatar?: string }> = [];
+    try {
+      if (participantsData) parsedParticipants = JSON.parse(participantsData).slice(0, 8);
+    } catch {}
+    const p1 = parsedParticipants[0];
+    const p2 = parsedParticipants[1];
     const event = await storage.createEvent({
       title,
       description: description || null,
       agencyName,
       agencyLogo: null,
-      participant1Name: participant1Name || null,
-      participant1Avatar: null,
-      participant2Name: participant2Name || null,
-      participant2Avatar: null,
-      participantCount: 0,
-      participants: [],
+      coverImage: coverImage || null,
+      participant1Name: p1?.name || null,
+      participant1Avatar: p1?.avatar || null,
+      participant2Name: p2?.name || null,
+      participant2Avatar: p2?.avatar || null,
+      participantsData: participantsData || null,
       scheduledAt: new Date(scheduledAt),
       isLive: isLive === true,
       createdBy: currentUser.id,
     });
     res.status(201).json(event);
+  });
+
+  app.delete("/api/events/:id", requireAuth, async (req, res) => {
+    const currentUser = await storage.getUser(req.userId!);
+    if (!currentUser) return res.status(401).json({ message: "Yetkisiz" });
+    const role = (currentUser.role || "").toUpperCase();
+    if (role !== "ADMIN" && role !== "MOD" && role !== "AJANS_SAHIBI") {
+      return res.status(403).json({ message: "Silme yetkin yok." });
+    }
+    await storage.deleteEvent(req.params.id);
+    res.json({ success: true });
   });
 
   app.get("/api/events/:id", requireAuth, async (req, res) => {

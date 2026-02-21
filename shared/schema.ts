@@ -46,10 +46,12 @@ export const events = pgTable("events", {
   description: text("description"),
   agencyName: text("agency_name").notNull(),
   agencyLogo: text("agency_logo"),
+  coverImage: text("cover_image"),
   participant1Name: text("participant1_name"),
   participant1Avatar: text("participant1_avatar"),
   participant2Name: text("participant2_name"),
   participant2Avatar: text("participant2_avatar"),
+  participantsData: text("participants_data"), // JSON: [{name, avatar}] max 8
   participantCount: integer("participant_count").notNull().default(0),
   participants: text("participants").array(),
   scheduledAt: timestamp("scheduled_at").notNull(),
@@ -63,10 +65,12 @@ export const insertEventSchema = createInsertSchema(events).pick({
   description: true,
   agencyName: true,
   agencyLogo: true,
+  coverImage: true,
   participant1Name: true,
   participant1Avatar: true,
   participant2Name: true,
   participant2Avatar: true,
+  participantsData: true,
   scheduledAt: true,
 });
 
