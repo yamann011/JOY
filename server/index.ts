@@ -532,6 +532,7 @@ interface CinemaMsg {
   username: string;
   displayName: string;
   role: string;
+  avatar?: string;
   text: string;
   createdAt: number;
 }
@@ -561,9 +562,9 @@ cinemaIO.use((socket, next) => {
     const username = String((auth as any).username || "Misafir");
     const displayName = String((auth as any).displayName || username);
     const role = String((auth as any).role || "guest");
-    // Geçerli userId: boş değil ve "undefined"/"null" değil
+    const avatar = String((auth as any).avatar || "");
     const safeUserId = userId && userId !== "undefined" && userId !== "null" ? userId : "";
-    (socket.data as any).user = { userId: safeUserId, username, displayName, role };
+    (socket.data as any).user = { userId: safeUserId, username, displayName, role, avatar };
     return next();
   } catch {
     return next(new Error("AUTH_FAILED"));
@@ -571,7 +572,7 @@ cinemaIO.use((socket, next) => {
 });
 
 cinemaIO.on("connection", (socket) => {
-  const u = (socket.data as any).user as { userId: string; username: string; displayName: string; role: string };
+  const u = (socket.data as any).user as { userId: string; username: string; displayName: string; role: string; avatar: string };
   let currentRoomId: string | null = null;
 
   // Oda listesini gönder
@@ -758,6 +759,7 @@ cinemaIO.on("connection", (socket) => {
       username: u.username,
       displayName: u.displayName,
       role: u.role,
+      avatar: u.avatar || undefined,
       text,
       createdAt: Date.now(),
     };
@@ -766,6 +768,21 @@ cinemaIO.on("connection", (socket) => {
     if (msgs.length > 200) msgs.shift();
     cinemaRoomMessages.set(currentRoomId, msgs);
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:message", msg);
+  });
+
+  // Sohbeti temizle (oda sahibi)
+  socket.on("cinema:clear_chat", () => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    const role = u.role.toLowerCase();
+    const isOwner = u.userId && u.userId === room.createdByUserId;
+    if (!isOwner && !role.includes("admin") && !role.includes("ajans")) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Sohbeti temizlemek için yetkin yok." });
+      return;
+    }
+    cinemaRoomMessages.set(currentRoomId, []);
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:chat_cleared");
   });
 
   // Odayı sil (admin/mod)

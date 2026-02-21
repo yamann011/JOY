@@ -46,6 +46,7 @@ interface CinemaMsg {
   username: string;
   displayName: string;
   role: string;
+  avatar?: string;
   text: string;
   createdAt: number;
 }
@@ -78,6 +79,83 @@ function roleColor(role: string) {
   if (r.includes("asistan")) return "text-cyan-400";
   if (r.includes("vip")) return "text-rose-400";
   return "text-gray-300";
+}
+
+function CinemaName({ name, role, isOwner }: { name: string; role: string; isOwner?: boolean }) {
+  const r = role.toLowerCase();
+  if (isOwner) {
+    return (
+      <span className="relative inline-flex items-center gap-1">
+        <style>{`@keyframes ownerGlow{0%,100%{background-position:0% 50%;filter:brightness(1) drop-shadow(0 0 4px #f59e0b);}50%{background-position:100% 50%;filter:brightness(1.4) drop-shadow(0 0 8px #fbbf24);}}`}</style>
+        <span className="font-bold bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-300 bg-clip-text text-transparent bg-[length:200%_auto]"
+          style={{ animation: "ownerGlow 2s ease-in-out infinite" }}>{name}</span>
+        <span className="text-[9px] font-bold px-1 py-0 rounded bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 leading-4">ODA SAHİBİ</span>
+      </span>
+    );
+  }
+  if (r.includes("admin")) {
+    return (
+      <span className="inline-block">
+        <style>{`@keyframes adminG{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}`}</style>
+        <span className="font-bold bg-gradient-to-r from-yellow-400 via-red-500 to-yellow-400 bg-clip-text text-transparent bg-[length:200%_auto]"
+          style={{ animation: "adminG 3s ease-in-out infinite" }}>{name}</span>
+      </span>
+    );
+  }
+  if (r.includes("ajans")) {
+    return (
+      <span className="inline-block">
+        <style>{`@keyframes ajansG{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}`}</style>
+        <span className="font-bold bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-300 bg-clip-text text-transparent bg-[length:200%_auto]"
+          style={{ animation: "ajansG 3s ease-in-out infinite" }}>{name}</span>
+      </span>
+    );
+  }
+  if (r.includes("moder")) {
+    return (
+      <span className="inline-block">
+        <style>{`@keyframes modG{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}`}</style>
+        <span className="font-bold bg-gradient-to-r from-black via-blue-400 to-black bg-clip-text text-transparent bg-[length:200%_auto]"
+          style={{ animation: "modG 3s ease-in-out infinite" }}>{name}</span>
+      </span>
+    );
+  }
+  if (r.includes("asistan")) {
+    return (
+      <span className="inline-block">
+        <style>{`@keyframes asistanG{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}`}</style>
+        <span className="font-bold bg-gradient-to-r from-red-500 via-blue-400 to-red-500 bg-clip-text text-transparent bg-[length:200%_auto]"
+          style={{ animation: "asistanG 3s ease-in-out infinite" }}>{name}</span>
+      </span>
+    );
+  }
+  if (r.includes("vip")) {
+    return (
+      <span className="inline-block">
+        <style>{`@keyframes vipG{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}`}</style>
+        <span className="font-bold bg-gradient-to-r from-rose-500 via-white to-rose-500 bg-clip-text text-transparent bg-[length:200%_auto]"
+          style={{ animation: "vipG 3s ease-in-out infinite" }}>{name}</span>
+      </span>
+    );
+  }
+  return <span className={`font-semibold ${roleColor(role)}`}>{name}</span>;
+}
+
+function CinemaAvatar({ name, avatar, role }: { name: string; avatar?: string; role: string }) {
+  const r = role.toLowerCase();
+  const bgColor = r.includes("admin") || r.includes("ajans") ? "bg-yellow-500/20 border-yellow-500/50"
+    : r.includes("moder") ? "bg-blue-500/20 border-blue-500/50"
+    : r.includes("asistan") ? "bg-cyan-500/20 border-cyan-500/50"
+    : r.includes("vip") ? "bg-rose-500/20 border-rose-500/50"
+    : "bg-white/5 border-white/10";
+  if (avatar) {
+    return <img src={avatar} alt={name} className={`w-6 h-6 rounded-full border object-cover shrink-0 ${bgColor}`} />;
+  }
+  return (
+    <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold shrink-0 ${bgColor} ${roleColor(role)}`}>
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -130,8 +208,9 @@ export default function CinemaPage() {
             username: (user as any).username || "",
             displayName: (user as any).displayName || "",
             role: (user as any).role || "",
+            avatar: (user as any).avatar || "",
           }
-        : { userId: "", username: "Misafir", displayName: "Misafir", role: "guest" },
+        : { userId: "", username: "Misafir", displayName: "Misafir", role: "guest", avatar: "" },
       transports: ["websocket"],
     });
     socketRef.current = socket;
@@ -161,6 +240,7 @@ export default function CinemaPage() {
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
     socket.on("cinema:message", (msg: CinemaMsg) => setMessages(prev => [...prev, msg]));
+    socket.on("cinema:chat_cleared", () => setMessages([]));
 
     socket.on("cinema:sync", ({ isPlaying, currentTime }: { isPlaying: boolean; currentTime: number; by: string }) => {
       setVideoState(prev => prev ? { ...prev, isPlaying, currentTime } : prev);
@@ -328,20 +408,42 @@ export default function CinemaPage() {
             {/* İzleyenler */}
             <div className="px-3 py-2 border-b border-yellow-500/10 shrink-0">
               <p className="text-[10px] text-yellow-500/50 font-semibold uppercase mb-1.5">İzleyenler ({participants.length})</p>
-              <div className="flex flex-wrap gap-1 max-h-12 overflow-y-auto">
-                {participants.map((p, i) => (
-                  <span key={i} className={`text-xs font-semibold ${roleColor(p.role)}`}>{p.displayName}</span>
-                ))}
+              <div className="flex flex-wrap gap-1.5 max-h-14 overflow-y-auto">
+                {participants.map((p, i) => {
+                  const pIsOwner = currentRoom?.createdByUserId && (p as any).userId === currentRoom.createdByUserId;
+                  return (
+                    <span key={i} className="text-xs">
+                      <CinemaName name={p.displayName} role={p.role} isOwner={!!pIsOwner} />
+                    </span>
+                  );
+                })}
               </div>
             </div>
-            {/* Mesajlar */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 pb-0">
-              {messages.map(m => (
-                <div key={m.id} className="text-sm break-words">
-                  <span className={`font-semibold mr-1 ${roleColor(m.role)}`}>{m.displayName}:</span>
-                  <span className="text-gray-300 text-xs">{m.text}</span>
-                </div>
-              ))}
+            {/* Mesajlar + Temizle başlığı */}
+            <div className="flex items-center px-3 pt-2 shrink-0">
+              <span className="text-[10px] text-yellow-500/50 font-semibold uppercase flex-1">Sohbet</span>
+              {isOwner && (
+                <button onClick={() => socketRef.current?.emit("cinema:clear_chat")}
+                  className="text-[9px] text-red-400/60 hover:text-red-400 transition-colors px-1 py-0.5 rounded hover:bg-red-500/10">
+                  Temizle
+                </button>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2 pb-0">
+              {messages.map(m => {
+                const msgIsOwner = currentRoom?.createdByUserId === m.userId;
+                return (
+                  <div key={m.id} className="flex items-start gap-1.5 text-sm break-words">
+                    <CinemaAvatar name={m.displayName} avatar={m.avatar} role={m.role} />
+                    <div className="min-w-0">
+                      <span className="mr-1 text-xs leading-4">
+                        <CinemaName name={m.displayName} role={m.role} isOwner={msgIsOwner} />
+                      </span>
+                      <span className="text-gray-300 text-xs leading-4">{m.text}</span>
+                    </div>
+                  </div>
+                );
+              })}
               <div ref={chatEndRef} />
             </div>
             {/* Input — floating chat baloncuğu ile çakışmaması için mb-20 */}
