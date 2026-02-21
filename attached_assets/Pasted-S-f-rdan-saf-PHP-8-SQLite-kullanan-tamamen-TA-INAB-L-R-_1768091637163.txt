@@ -1,0 +1,127 @@
+Sıfırdan, saf PHP 8 + SQLite kullanan, tamamen TAŞINABİLİR ve KİLİTSİZ bir web uygulamasının KEMİK İSKELETİNİ oluştur.
+
+Bu bir AJANS / PK / ETKİNLİK / YAZILI SOHBET PLATFORMU olacak.
+SESLİ SOHBET YOK.
+Discord benzeri realtime sistem YOK.
+Sadece yazılı sohbet, yayın ve panel altyapısı olacak.
+
+====================
+ZORUNLU KURALLAR
+====================
+- Framework KULLANMA (Laravel, React, Next, Vue vb. YOK)
+- Cloud, API, Replit DB, Firebase, Supabase YOK
+- WebSocket YOK
+- Sadece saf PHP 8 + SQLite
+- Tek proje, tek klasör mantığı
+- FTP ile cPanel / VPS’e taşındığında aynen çalışmalı
+- index.php ana giriş noktası olacak
+- PDO kullanılacak
+- Kodlar sade, okunabilir ve genişletilebilir olacak
+
+====================
+ROL & YETKİ SİSTEMİ
+====================
+Roller:
+- USER
+- VIP
+- MOD
+- ADMIN
+
+Yetki hiyerarşisi:
+ADMIN > MOD > VIP > USER
+
+Kurallar:
+- Giriş YOKSA:
+  - Hamburger menü GÖRÜNMEZ
+  - Sadece vitrin anasayfa görünür
+- Giriş VARSA:
+  - Hamburger menü GÖRÜNÜR
+  - Menü içeriği role göre değişir
+- Admin linkleri sadece ADMIN rolüne görünür
+
+====================
+TASARIM
+====================
+- Siyah + gold premium renk paleti
+- Modern, elit, sade tasarım
+- Mobil + PC uyumlu (responsive)
+- Taşma olmayacak, ekranlara tam oturacak
+- Anasayfada kayan yazı (marquee veya slider)
+- Hamburger menü sol üstte olacak
+
+====================
+GLOBAL BİLDİRİM (ALTYAPI)
+====================
+- Kullanıcı giriş yaptığında:
+  - Profil resmi
+  - İsim
+  - Rol
+  - Level (şimdilik placeholder)
+- JS + CSS ile animasyonlu bildirim altyapısı hazır olsun
+- Bildirim ekranda süzülsün ve kaybolsun
+- Şimdilik sadece iskelet, içerik sonra eklenecek
+
+====================
+YAZILI SOHBET (ALTYAPI)
+====================
+- Grup bazlı yazılı sohbet için altyapı hazırla
+- Realtime YOK
+- AJAX + polling mantığına uygun yapı
+- Henüz mesajlaşma ekranı detaylandırılmayacak
+- Sadece klasör ve dosya iskeleti olsun
+
+====================
+PK / ETKİNLİK YAYINI (ALTYAPI)
+====================
+PK yayını için veri yapısı hazırla:
+- Ajans görseli
+- Ajans adı
+- PK kişi sayısı
+- Katılan isimler
+- Saat / tarih
+
+Henüz CRUD yapma.
+Sadece altyapı ve boş ekranlar olsun.
+
+====================
+DOSYA YAPISI (ZORUNLU)
+====================
+Aşağıdaki dosya ve klasör yapısını AYNEN oluştur:
+
+/app
+  /db
+    database.sqlite
+  /assets
+    style.css
+    app.js
+  /includes
+    config.php
+    db.php
+    auth.php
+    header.php
+    footer.php
+    permissions.php
+  /admin
+    login.php
+    dashboard.php
+    users.php
+  /modules
+    pk.php
+    events.php
+    chat.php
+    tickets.php
+  index.php
+  logout.php
+  .htaccess
+
+====================
+İSTENEN ÇIKTI
+====================
+- Tüm klasörleri oluştur
+- Tüm dosyaların TAM kodunu yaz
+- Kodlar çalışır durumda olsun
+- Henüz ileri özellik ekleme
+- Bu sadece KEMİK İSKELET olacak
+- Sonradan adım adım geliştirilecek
+
+Başla.
