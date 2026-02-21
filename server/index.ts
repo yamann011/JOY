@@ -466,8 +466,8 @@ io.on("connection", (socket) => {
     const existingOtherMsg = existing.find(m => m.fromUserId === toUserId);
     socket.emit("dm:conversation_update", {
       withUserId: toUserId,
-      withUsername: existingOtherMsg?.fromUsername ?? toUsername || toUserId,
-      withDisplayName: existingOtherMsg?.fromDisplayName ?? toDisplayName || toUsername || toUserId,
+      withUsername: existingOtherMsg?.fromUsername ?? (toUsername || toUserId),
+      withDisplayName: existingOtherMsg?.fromDisplayName ?? (toDisplayName || toUsername || toUserId),
       withRole: existingOtherMsg?.fromRole ?? "USER",
       lastMsg: text,
       lastAt: msg.createdAt,
