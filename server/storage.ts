@@ -19,6 +19,9 @@ import {
   type VipApp,
   type EmbeddedSite,
   type InsertEmbeddedSite,
+  type News,
+  type NewsComment,
+  type NewsLike,
   users,
   events,
   chatGroups,
@@ -30,6 +33,9 @@ import {
   settings,
   vipApps,
   embeddedSites,
+  news,
+  newsComments,
+  newsLikes,
 } from "@shared/schema";
 
 import { db } from "./db";
@@ -617,6 +623,97 @@ export class DatabaseStorage implements IStorage {
     const result: any = await db.delete(embeddedSites).where(eq(embeddedSites.id, id));
     if (typeof result?.rowCount === "number") return result.rowCount > 0;
     return true;
+  }
+
+  async getVipApp(id: string): Promise<VipApp | undefined> {
+    const [app] = await db.select().from(vipApps).where(eq(vipApps.id, id));
+    return app || undefined;
+  }
+
+  async updateVipApp(id: string, updates: any): Promise<VipApp | undefined> {
+    const [updated] = await db.update(vipApps).set(updates).where(eq(vipApps.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async getAnnouncement(id: string): Promise<Announcement | undefined> {
+    const [ann] = await db.select().from(announcements).where(eq(announcements.id, id));
+    return ann || undefined;
+  }
+
+  async getAllNews(): Promise<News[]> {
+    return await db.select().from(news).orderBy(desc(news.createdAt));
+  }
+
+  async getPublishedNews(): Promise<News[]> {
+    return await db.select().from(news).where(eq(news.isPublished, true)).orderBy(desc(news.createdAt));
+  }
+
+  async getNewsById(id: string): Promise<News | undefined> {
+    const [item] = await db.select().from(news).where(eq(news.id, id));
+    return item || undefined;
+  }
+
+  async createNews(newsData: any): Promise<News> {
+    const [item] = await db.insert(news).values(newsData).returning();
+    return item;
+  }
+
+  async updateNews(id: string, updates: any): Promise<News | undefined> {
+    const [updated] = await db.update(news).set({ ...updates, updatedAt: new Date() }).where(eq(news.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteNews(id: string): Promise<boolean> {
+    await db.delete(newsComments).where(eq(newsComments.newsId, id));
+    await db.delete(newsLikes).where(eq(newsLikes.newsId, id));
+    const result: any = await db.delete(news).where(eq(news.id, id));
+    if (typeof result?.rowCount === "number") return result.rowCount > 0;
+    return true;
+  }
+
+  async incrementNewsView(id: string): Promise<News | undefined> {
+    const item = await this.getNewsById(id);
+    if (!item) return undefined;
+    const [updated] = await db.update(news).set({ viewCount: (item.viewCount || 0) + 1 }).where(eq(news.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async getNewsComments(newsId: string): Promise<NewsComment[]> {
+    return await db.select().from(newsComments).where(eq(newsComments.newsId, newsId)).orderBy(desc(newsComments.createdAt));
+  }
+
+  async createNewsComment(comment: any): Promise<NewsComment> {
+    const [item] = await db.insert(newsComments).values(comment).returning();
+    return item;
+  }
+
+  async deleteNewsComment(id: string): Promise<boolean> {
+    const result: any = await db.delete(newsComments).where(eq(newsComments.id, id));
+    if (typeof result?.rowCount === "number") return result.rowCount > 0;
+    return true;
+  }
+
+  async getUserNewsLike(newsId: string, userId: string): Promise<NewsLike | undefined> {
+    const [like] = await db.select().from(newsLikes).where(eq(newsLikes.newsId, newsId)).where(eq(newsLikes.userId, userId));
+    return like || undefined;
+  }
+
+  async createNewsLike(newsId: string, userId: string): Promise<NewsLike> {
+    const existing = await this.getUserNewsLike(newsId, userId);
+    if (existing) return existing;
+    const [like] = await db.insert(newsLikes).values({ newsId, userId }).returning();
+    await db.update(news).set({ likeCount: (await this.getNewsById(newsId))?.likeCount ?? 0 + 1 }).where(eq(news.id, newsId));
+    return like;
+  }
+
+  async deleteNewsLike(newsId: string, userId: string): Promise<boolean> {
+    const result: any = await db.delete(newsLikes).where(eq(newsLikes.newsId, newsId)).where(eq(newsLikes.userId, userId));
+    const changed = typeof result?.rowCount === "number" ? result.rowCount > 0 : true;
+    if (changed) {
+      const item = await this.getNewsById(newsId);
+      if (item) await db.update(news).set({ likeCount: Math.max(0, (item.likeCount || 0) - 1) }).where(eq(news.id, newsId));
+    }
+    return changed;
   }
 }
 
