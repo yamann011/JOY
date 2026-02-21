@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/lib/auth-context";
-import { AnimatedUsername } from "@/components/animated-username";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -312,9 +311,7 @@ export default function CinemaPage() {
               <p className="text-[10px] text-yellow-500/50 font-semibold uppercase mb-1.5">İzleyenler ({participants.length})</p>
               <div className="flex flex-wrap gap-1 max-h-12 overflow-y-auto">
                 {participants.map((p, i) => (
-                  <span key={i} className="text-xs">
-                    <AnimatedUsername username={p.displayName} role={(p.role?.toUpperCase() || "USER") as any} />
-                  </span>
+                  <span key={i} className={`text-xs font-semibold ${roleColor(p.role)}`}>{p.displayName}</span>
                 ))}
               </div>
             </div>
@@ -322,9 +319,7 @@ export default function CinemaPage() {
             <div className="flex-1 overflow-y-auto p-3 space-y-2 pb-0">
               {messages.map(m => (
                 <div key={m.id} className="text-sm break-words">
-                  <span className="font-semibold mr-1">
-                    <AnimatedUsername username={m.displayName} role={(m.role?.toUpperCase() || "USER") as any} />
-                  </span>
+                  <span className={`font-semibold mr-1 ${roleColor(m.role)}`}>{m.displayName}:</span>
                   <span className="text-gray-300 text-xs">{m.text}</span>
                 </div>
               ))}
