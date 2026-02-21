@@ -14,7 +14,9 @@ import {
   insertNewsCommentSchema,
 } from "@shared/schema";
 import session from "express-session";
+import ConnectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
+import { pool } from "./db";
 
 declare module "express-session" {
   interface SessionData {
@@ -23,6 +25,7 @@ declare module "express-session" {
 }
 
 const MemoryStoreSession = MemoryStore(session);
+const PgSession = ConnectPgSimple(session);
 
 const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   if (!req.session.userId) {
@@ -37,6 +40,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ✅ Proxy arkasında (Cloudflare/Railway) cookie/sessions düzgün çalışsın
   app.set("trust proxy", 1);
 
+  // Session store: PostgreSQL varsa kalıcı, yoksa RAM
+  const sessionStore = pool
+    ? new PgSession({ pool, createTableIfMissing: true })
+    : new MemoryStoreSession({ checkPeriod: 86400000 });
+
   app.use(
     session({
       name: "joy.sid",
@@ -44,17 +52,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       resave: false,
       saveUninitialized: false,
       proxy: true,
-      store: new MemoryStoreSession({
-        checkPeriod: 86400000,
-      }),
+      store: sessionStore,
       cookie: {
-        // Her sunucuda (Railway, Render, VPS, localhost) otomatik çalışır
-        // HTTPS'te secure=true, HTTP'de false — elle değiştirmeye gerek yok
         secure: "auto",
         httpOnly: true,
         sameSite: "lax",
-        // domain hiç set edilmez = her zaman mevcut domain için geçerli
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 gün
+        maxAge: 7 * 24 * 60 * 60 * 1000,
       },
     }),
   );
