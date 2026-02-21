@@ -1,21 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Newspaper, Eye, Heart, MessageSquare, ExternalLink, Play } from "lucide-react";
+import { Newspaper, Eye, Heart, MessageSquare, ExternalLink, Play, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { tr } from "date-fns/locale";
 import { HamburgerMenuTrigger } from "@/components/hamburger-menu";
 import { useBranding } from "@/hooks/use-branding";
-
-interface NewsAuthor {
-  id: string;
-  username: string;
-  displayName: string;
-  role: string;
-}
+import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/hooks/use-toast";
 
 interface NewsItem {
   id: string;
@@ -28,13 +23,19 @@ interface NewsItem {
   category: string;
   viewCount: number;
   likeCount: number;
-  author: NewsAuthor | null;
+  author: { id: string; username: string; displayName: string; role: string } | null;
   createdAt: string;
 }
+
+const canModerate = (role?: string) =>
+  ["ADMIN", "AJANS_SAHIBI", "MOD", "ASISTAN"].includes(role || "");
 
 export default function NewsPage() {
   const [, setLocation] = useLocation();
   const { siteName } = useBranding();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: news, isLoading } = useQuery<NewsItem[]>({
     queryKey: ["/api/news"],
@@ -45,8 +46,23 @@ export default function NewsPage() {
     },
   });
 
-  const handleNewsClick = (id: string) => {
-    setLocation(`/news/${id}`);
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/news/${id}`);
+      if (!res.ok) throw new Error("Silinemedi");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/news"] });
+      toast({ title: "Haber silindi" });
+    },
+    onError: () => toast({ title: "Hata", description: "Silinemedi", variant: "destructive" }),
+  });
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm("Bu haberi silmek istediğinize emin misiniz?")) {
+      deleteMutation.mutate(id);
+    }
   };
 
   return (
@@ -84,7 +100,7 @@ export default function NewsPage() {
               <Card
                 key={item.id}
                 className="overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
-                onClick={() => handleNewsClick(item.id)}
+                onClick={() => setLocation(`/news/${item.id}`)}
               >
                 {item.imageUrl && (
                   <div className="relative h-48 overflow-hidden">
@@ -98,16 +114,27 @@ export default function NewsPage() {
                         <Play className="w-12 h-12 text-white" />
                       </div>
                     )}
-                    <Badge className="absolute top-2 right-2 bg-primary/90">
-                      {item.category}
-                    </Badge>
+                    <Badge className="absolute top-2 right-2 bg-primary/90">{item.category}</Badge>
                   </div>
                 )}
 
                 <CardHeader>
-                  <CardTitle className="line-clamp-2 group-hover:text-primary transition-colors">
-                    {item.title}
-                  </CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="line-clamp-2 group-hover:text-primary transition-colors flex-1">
+                      {item.title}
+                    </CardTitle>
+                    {canModerate(user?.role) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0 h-7 w-7 text-destructive hover:bg-destructive/10"
+                        onClick={(e) => handleDelete(e, item.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{item.author?.displayName || "Anonim"}</span>
                     <span>•</span>
@@ -119,15 +146,12 @@ export default function NewsPage() {
                   <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
                     {item.summary || item.content}
                   </p>
-
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
-                      <Eye className="w-4 h-4" />
-                      {item.viewCount}
+                      <Eye className="w-4 h-4" /> {item.viewCount}
                     </div>
                     <div className="flex items-center gap-1">
-                      <Heart className="w-4 h-4" />
-                      {item.likeCount}
+                      <Heart className="w-4 h-4" /> {item.likeCount}
                     </div>
                     {item.externalLink && (
                       <div className="flex items-center gap-1 ml-auto">
@@ -144,12 +168,8 @@ export default function NewsPage() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Newspaper className="w-16 h-16 text-muted-foreground mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">
-                Henüz haber bulunmuyor
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Yeni haberler yayınlandığında burada görünecek
-              </p>
+              <p className="text-lg font-medium text-muted-foreground">Henüz haber bulunmuyor</p>
+              <p className="text-sm text-muted-foreground">Yeni haberler yayınlandığında burada görünecek</p>
             </CardContent>
           </Card>
         )}

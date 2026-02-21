@@ -6,7 +6,9 @@ import { z } from "zod";
 export const UserRole = {
   USER: "USER",
   VIP: "VIP",
+  ASISTAN: "ASISTAN",
   MOD: "MOD",
+  AJANS_SAHIBI: "AJANS_SAHIBI",
   ADMIN: "ADMIN",
 } as const;
 
@@ -208,7 +210,7 @@ export const adminCreateUserSchema = z.object({
   username: z.string().min(3, "Kullanıcı adı en az 3 karakter olmalı"),
   password: z.string().min(6, "Şifre en az 6 karakter olmalı"),
   displayName: z.string().min(2, "Görünen isim en az 2 karakter olmalı"),
-  role: z.enum(["USER", "VIP", "MOD", "ADMIN"]),
+  role: z.enum(["USER", "VIP", "ASISTAN", "MOD", "AJANS_SAHIBI", "ADMIN"]),
   level: z.number().min(1).max(100),
 });
 

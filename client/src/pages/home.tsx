@@ -9,12 +9,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import type { Announcement, Event, Banner } from "@shared/schema";
-import { Crown, Shield, Users, MessageSquare, Calendar, Sparkles, Star, Zap, LogIn, Megaphone, Play, Volume2, VolumeX } from "lucide-react";
+import { Crown, Shield, Users, MessageSquare, Calendar, Sparkles, Star, Zap, LogIn, Megaphone, Play, Volume2, VolumeX, Newspaper, ChevronRight, UserCheck, Briefcase } from "lucide-react";
 import { HamburgerMenu } from "@/components/hamburger-menu";
 import { useAnnouncement } from "@/hooks/use-announcement";
 import { EventCard } from "@/components/event-card";
 import { useBackgroundMusic } from "@/components/background-music";
 import { useBranding } from "@/hooks/use-branding";
+import { format } from "date-fns";
+import { tr } from "date-fns/locale";
 
 function TurkishFlag({ className = "w-6 h-4" }: { className?: string }) {
   return (
@@ -306,7 +308,6 @@ function QuickLoginBox() {
 // Fake online user count hook
 function useFakeOnlineCount() {
   const [count, setCount] = useState(() => Math.floor(Math.random() * 50) + 120);
-  
   useEffect(() => {
     const interval = setInterval(() => {
       setCount(prev => {
@@ -316,8 +317,120 @@ function useFakeOnlineCount() {
     }, 15000);
     return () => clearInterval(interval);
   }, []);
-  
   return count;
+}
+
+function LatestNewsSection() {
+  const [, setLocation] = useLocation();
+  const { data: news } = useQuery<any[]>({
+    queryKey: ["/api/news"],
+    queryFn: async () => {
+      const res = await fetch("/api/news");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const latest = (news || []).slice(0, 2);
+  if (!latest.length) return null;
+
+  return (
+    <section className="py-16 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-2">
+            <Newspaper className="w-6 h-6 text-primary" />
+            <h2 className="text-2xl font-bold text-gradient-gold">Son Haberler</h2>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/news")} className="text-primary">
+            Tümünü Gör <ChevronRight className="w-4 h-4 ml-1" />
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {latest.map((item: any) => (
+            <Card
+              key={item.id}
+              className="overflow-hidden cursor-pointer hover:shadow-lg transition-all group"
+              onClick={() => setLocation(`/news/${item.id}`)}
+            >
+              {item.imageUrl && (
+                <div className="h-40 overflow-hidden">
+                  <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                </div>
+              )}
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">{item.category}</span>
+                  <span>{format(new Date(item.createdAt), "d MMM yyyy", { locale: tr })}</span>
+                </div>
+                <CardTitle className="line-clamp-2 text-base group-hover:text-primary transition-colors">{item.title}</CardTitle>
+              </CardHeader>
+              {item.summary && (
+                <CardContent className="pt-0">
+                  <p className="text-sm text-muted-foreground line-clamp-2">{item.summary}</p>
+                </CardContent>
+              )}
+            </Card>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TeamSection() {
+  const { data: users } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const teamRoles = ["ADMIN", "AJANS_SAHIBI", "MOD", "ASISTAN"];
+  const team = (users || []).filter((u: any) => teamRoles.includes(u.role));
+  if (!team.length) return null;
+
+  const roleInfo: Record<string, { label: string; icon: any; color: string }> = {
+    ADMIN: { label: "ADMIN", icon: Shield, color: "text-primary" },
+    AJANS_SAHIBI: { label: "PATRON", icon: Crown, color: "text-yellow-400" },
+    MOD: { label: "MOD", icon: Star, color: "text-amber-400" },
+    ASISTAN: { label: "ASİSTAN", icon: UserCheck, color: "text-blue-400" },
+  };
+
+  return (
+    <section className="py-16 px-4 bg-card/30">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center gap-2 mb-8">
+          <Users className="w-6 h-6 text-primary" />
+          <h2 className="text-2xl font-bold text-gradient-gold">Ekibimiz</h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {team.map((member: any) => {
+            const info = roleInfo[member.role] || roleInfo.ASISTAN;
+            const Icon = info.icon;
+            return (
+              <Card key={member.id} className="p-4 text-center hover:border-primary/50 transition-colors">
+                <div className="w-14 h-14 rounded-full mx-auto mb-3 overflow-hidden border-2 border-primary/30 bg-primary/10 flex items-center justify-center">
+                  {member.avatar ? (
+                    <img src={member.avatar} alt={member.displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-xl font-bold text-primary">{member.displayName?.charAt(0)}</span>
+                  )}
+                </div>
+                <p className="font-semibold text-sm truncate">{member.displayName}</p>
+                <div className={`flex items-center justify-center gap-1 mt-1 text-xs font-medium ${info.color}`}>
+                  <Icon className="w-3 h-3" />
+                  <span>{info.label}</span>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export default function Home() {
@@ -505,6 +618,12 @@ export default function Home() {
             </p>
           </div>
         </section>
+
+        {/* Son Haberler */}
+        <LatestNewsSection />
+
+        {/* Asistan / Patron Köşesi */}
+        <TeamSection />
       </main>
 
       <footer className="border-t border-border py-8 px-4">

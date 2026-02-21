@@ -1,27 +1,37 @@
 import { Badge } from "@/components/ui/badge";
-import { Crown, Shield, Star, User } from "lucide-react";
+import { Crown, Shield, Star, User, Briefcase, UserCheck } from "lucide-react";
 import { UserRole, type UserRoleType } from "@shared/schema";
 
 interface RoleBadgeProps {
-  role: UserRoleType;
+  role: UserRoleType | string;
   showIcon?: boolean;
   size?: "sm" | "md" | "lg";
 }
 
-const roleConfig = {
+const roleConfig: Record<string, { label: string; icon: any; className: string }> = {
   [UserRole.ADMIN]: {
     label: "ADMIN",
     icon: Shield,
     className: "bg-primary text-primary-foreground border-primary",
+  },
+  [UserRole.AJANS_SAHIBI]: {
+    label: "PATRON",
+    icon: Crown,
+    className: "bg-yellow-500 text-black border-yellow-400",
   },
   [UserRole.MOD]: {
     label: "MOD",
     icon: Star,
     className: "bg-amber-600 text-white border-amber-500",
   },
+  [UserRole.ASISTAN]: {
+    label: "ASİSTAN",
+    icon: UserCheck,
+    className: "bg-blue-600 text-white border-blue-500",
+  },
   [UserRole.VIP]: {
     label: "VIP",
-    icon: Crown,
+    icon: Briefcase,
     className: "bg-rose-600 text-white border-rose-500",
   },
   [UserRole.USER]: {
@@ -53,4 +63,8 @@ export function RoleBadge({ role, showIcon = true, size = "md" }: RoleBadgeProps
       </span>
     </Badge>
   );
+}
+
+export function getRoleLabel(role: string): string {
+  return roleConfig[role]?.label ?? role;
 }

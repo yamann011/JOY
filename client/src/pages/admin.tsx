@@ -528,7 +528,9 @@ export default function Admin() {
                           <SelectContent>
                             <SelectItem value="USER">USER</SelectItem>
                             <SelectItem value="VIP">VIP</SelectItem>
+                            <SelectItem value="ASISTAN">ASİSTAN</SelectItem>
                             <SelectItem value="MOD">MOD</SelectItem>
+                            <SelectItem value="AJANS_SAHIBI">PATRON (Ajans Sahibi)</SelectItem>
                             <SelectItem value="ADMIN">ADMIN</SelectItem>
                           </SelectContent>
                         </Select>
@@ -685,7 +687,9 @@ export default function Admin() {
                       <SelectContent>
                         <SelectItem value="USER">USER</SelectItem>
                         <SelectItem value="VIP">VIP</SelectItem>
+                        <SelectItem value="ASISTAN">ASİSTAN</SelectItem>
                         <SelectItem value="MOD">MOD</SelectItem>
+                        <SelectItem value="AJANS_SAHIBI">PATRON (Ajans Sahibi)</SelectItem>
                         <SelectItem value="ADMIN">ADMIN</SelectItem>
                       </SelectContent>
                     </Select>

@@ -45,6 +45,12 @@ const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+const isAdmin = (role?: string) =>
+  role === "ADMIN" || role === "AJANS_SAHIBI";
+
+const isMod = (role?: string) =>
+  isAdmin(role) || role === "MOD" || role === "ASISTAN";
+
 function setAuthCookie(res: Response, userId: string) {
   const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
   res.cookie("joy.token", token, {
@@ -135,7 +141,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/admin/users", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -185,7 +191,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/chat/private", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+    if (!isMod(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erisim" });
     }
 
@@ -268,7 +274,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/chat/groups", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+    if (!isMod(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -292,7 +298,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/chat/groups/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -347,7 +353,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/chat/groups/:id/messages", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+    if (!isMod(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -357,7 +363,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/chat/messages/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+    if (!isMod(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -372,7 +378,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const currentUser = await storage.getUser(req.userId!);
 
     let tickets;
-    if (currentUser?.role === "ADMIN" || currentUser?.role === "MOD") {
+    if (isMod(currentUser?.role)) {
       tickets = await storage.getTickets();
     } else {
       tickets = await storage.getTickets(req.userId);
@@ -383,7 +389,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/admin/tickets/recent", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -408,7 +414,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/tickets/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+    if (!isMod(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -445,7 +451,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         role: currentUser.role || "USER",
       });
 
-      if (currentUser.role === "ADMIN" || currentUser.role === "MOD") {
+      if (isAdmin(currentUser.role)) {
         await storage.updateTicket(req.params.id, { status: "in_progress" });
       }
 
@@ -467,7 +473,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/announcements", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -485,7 +491,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/admin/announcements/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -498,7 +504,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/users", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -520,7 +526,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/admin/users/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -542,7 +548,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/users/:id/ban", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -561,7 +567,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/users/:id/unban", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -576,7 +582,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/admin/users/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -598,7 +604,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/settings/film", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -614,7 +620,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/settings/music", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -634,7 +640,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/vip/apps", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -656,7 +662,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/vip/apps/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -674,7 +680,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/admin/banners", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
     const banners = await storage.getBanners();
@@ -683,7 +689,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/banners", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -701,7 +707,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/admin/banners/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -714,7 +720,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/admin/banners/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -740,7 +746,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/settings/featured-members", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -765,7 +771,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/settings/branding", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -786,7 +792,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/admin/embedded-sites", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
     try {
@@ -799,7 +805,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/embedded-sites", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
     try {
@@ -816,7 +822,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/admin/embedded-sites/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
     try {
@@ -832,7 +838,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/admin/embedded-sites/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
     try {
@@ -848,7 +854,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/tickets/:id", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+    if (!isMod(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
     try {
@@ -874,7 +880,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/settings/social-links", requireAuth, async (req, res) => {
     const currentUser = await storage.getUser(req.userId!);
-    if (currentUser?.role !== "ADMIN") {
+    if (!isAdmin(currentUser?.role)) {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
@@ -917,7 +923,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/pwa/config", requireAuth, async (req, res) => {
     try {
       const currentUser = await storage.getUser(req.userId!);
-      if (currentUser?.role !== "ADMIN") {
+      if (!isAdmin(currentUser?.role)) {
         return res.status(403).json({ message: "Sadece adminler PWA ayarlarını değiştirebilir" });
       }
 
@@ -1086,7 +1092,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/news", requireAuth, async (req, res) => {
     try {
       const currentUser = await storage.getUser(req.userId!);
-      if (currentUser?.role !== "ADMIN") {
+      if (!isAdmin(currentUser?.role)) {
         return res.status(403).json({ message: "Sadece adminler haber ekleyebilir" });
       }
 
@@ -1105,7 +1111,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.patch("/api/news/:id", requireAuth, async (req, res) => {
     try {
       const currentUser = await storage.getUser(req.userId!);
-      if (currentUser?.role !== "ADMIN") {
+      if (!isAdmin(currentUser?.role)) {
         return res.status(403).json({ message: "Sadece adminler haber düzenleyebilir" });
       }
 
@@ -1124,8 +1130,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/news/:id", requireAuth, async (req, res) => {
     try {
       const currentUser = await storage.getUser(req.userId!);
-      if (currentUser?.role !== "ADMIN") {
-        return res.status(403).json({ message: "Sadece adminler haber silebilir" });
+      if (!isMod(currentUser?.role)) {
+        return res.status(403).json({ message: "Yetkiniz yok" });
       }
 
       const deleted = await storage.deleteNews(req.params.id);
@@ -1167,7 +1173,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/news/:newsId/comments/:commentId", requireAuth, async (req, res) => {
     try {
       const currentUser = await storage.getUser(req.userId!);
-      if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
+      if (!isMod(currentUser?.role)) {
         return res.status(403).json({ message: "Sadece adminler ve moderatörler yorum silebilir" });
       }
 
@@ -1203,7 +1209,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/admin/news", requireAuth, async (req, res) => {
     try {
       const currentUser = await storage.getUser(req.userId!);
-      if (currentUser?.role !== "ADMIN") {
+      if (!isAdmin(currentUser?.role)) {
         return res.status(403).json({ message: "Sadece adminler tüm haberleri görebilir" });
       }
 
