@@ -526,6 +526,8 @@ io.on("connection", (socket) => {
           count: room.participants.size,
         });
         if (room.participants.size === 0) {
+          // Oda sahibi çıktıysa userActiveRoom'dan temizle
+          if (room.createdByUserId) userActiveRoom.delete(room.createdByUserId);
           setTimeout(() => {
             const r = cinemaRooms.get(currentRoomId!);
             if (r && r.participants.size === 0) {
@@ -568,6 +570,7 @@ interface CinemaMsg {
 
 const cinemaRooms = new Map<string, CinemaRoom>();
 const cinemaRoomMessages = new Map<string, CinemaMsg[]>();
+const userActiveRoom = new Map<string, string>(); // userId → roomId (kişi başı 1 oda)
 
 function cinemaCID(): string {
   return `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -623,6 +626,11 @@ cinemaIO.on("connection", (socket) => {
       socket.emit("cinema:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
       return;
     }
+    // Kişi başı maksimum 1 oda
+    if (userActiveRoom.has(u.userId)) {
+      socket.emit("cinema:error", { code: "LIMIT", message: "Zaten aktif bir odanız var. Önce mevcut odanızı kapatın." });
+      return;
+    }
     const name = String(payload?.name || "").trim();
     const videoUrl = String(payload?.videoUrl || "").trim();
     if (!name || !videoUrl) {
@@ -644,6 +652,7 @@ cinemaIO.on("connection", (socket) => {
     };
     cinemaRooms.set(id, room);
     cinemaRoomMessages.set(id, []);
+    userActiveRoom.set(u.userId, id); // Bu kullanıcının aktif odası
 
     // Broadcast yeni oda
     cinemaIO.emit("cinema:room_added", {
@@ -668,7 +677,9 @@ cinemaIO.on("connection", (socket) => {
       socket.emit("cinema:error", { code: "NOT_FOUND", message: "Oda bulunamadı." });
       return;
     }
-    if (room.passwordHash && simplehash(String(payload?.password || "")) !== room.passwordHash) {
+    // Oda sahibi şifresiz girebilir
+    const isOwner = u.userId && u.userId === room.createdByUserId;
+    if (!isOwner && room.passwordHash && simplehash(String(payload?.password || "")) !== room.passwordHash) {
       socket.emit("cinema:error", { code: "WRONG_PASSWORD", message: "Şifre yanlış." });
       return;
     }
@@ -791,12 +802,16 @@ cinemaIO.on("connection", (socket) => {
 
   // Odayı sil (admin/mod)
   socket.on("cinema:delete_room", (payload: { roomId?: string }) => {
+    const rid = String(payload?.roomId || currentRoomId || "");
     const role = u.role.toLowerCase();
-    if (!role.includes("admin") && !role.includes("moder") && !role.includes("asistan") && !role.includes("ajans")) {
+    const room = cinemaRooms.get(rid);
+    // Sadece oda sahibi veya admin/mod silebilir
+    const isOwner = room && u.userId && u.userId === room.createdByUserId;
+    if (!isOwner && !role.includes("admin") && !role.includes("moder") && !role.includes("asistan") && !role.includes("ajans")) {
       socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Oda silmek için yetkin yok." });
       return;
     }
-    const rid = String(payload?.roomId || currentRoomId || "");
+    if (room) userActiveRoom.delete(room.createdByUserId);
     cinemaRooms.delete(rid);
     cinemaRoomMessages.delete(rid);
     cinemaIO.emit("cinema:room_removed", { roomId: rid });

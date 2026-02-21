@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/lib/auth-context";
+import { AnimatedUsername } from "@/components/animated-username";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -205,6 +206,12 @@ export default function CinemaPage() {
   };
 
   const handleJoinClick = (room: CinemaRoomInfo) => {
+    const myUserId = String((user as any)?.id || "");
+    // Oda sahibi şifresiz girebilir
+    if (room.createdByUserId && myUserId === room.createdByUserId) {
+      joinRoom(room, "");
+      return;
+    }
     if (room.hasPassword) { setShowJoinPass(room); setJoinPass(""); }
     else joinRoom(room);
   };
@@ -241,33 +248,35 @@ export default function CinemaPage() {
   // ─── ROOM VIEW ────────────────────────────────────────────────────────────
   if (currentRoom && videoState) {
     const embedUrl = toEmbedUrl(videoState.videoUrl);
+    const isOwner = String((user as any)?.id) === videoState.createdByUserId;
+    const showControls = canControlVideo(videoState);
     return (
-      <div className="flex flex-col h-screen bg-[#0a0a0a] text-white overflow-hidden">
-        {/* Top bar */}
-        <div className="flex items-center gap-3 px-4 py-2 bg-black border-b border-yellow-500/20 shrink-0">
-          <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10">
+      <div className="flex flex-col bg-[#0a0a0a] text-white overflow-hidden" style={{ height: "100dvh" }}>
+        {/* Top bar — hamburger menü altında */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-black border-b border-yellow-500/20 shrink-0 mt-14">
+          <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 w-8">
             <ChevronLeft className="w-5 h-5" />
           </Button>
-          <Tv2 className="w-5 h-5 text-yellow-400" />
-          <span className="font-bold text-lg truncate text-yellow-100">{currentRoom.name}</span>
-          <Badge variant="outline" className="ml-auto border-yellow-500/30 text-yellow-300 text-xs">
+          <Tv2 className="w-4 h-4 text-yellow-400 shrink-0" />
+          <span className="font-bold text-base truncate text-yellow-100 flex-1">{currentRoom.name}</span>
+          <Badge variant="outline" className="border-yellow-500/30 text-yellow-300 text-xs shrink-0">
             <Users className="w-3 h-3 mr-1" />{currentRoom.participantCount}
           </Badge>
-          {canModerate() && (
+          {(isOwner || canModerate()) && (
             <>
-              <Button size="sm" variant="outline" className="border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10 text-xs" onClick={() => { setNewUrl(videoState.videoUrl); setShowChangeUrl(true); }}>
-                <RefreshCw className="w-3 h-3 mr-1" /> URL Değiştir
+              <Button size="sm" variant="outline" className="border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10 text-xs px-2 h-7 shrink-0" onClick={() => { setNewUrl(videoState.videoUrl); setShowChangeUrl(true); }}>
+                <RefreshCw className="w-3 h-3 mr-1" /> URL
               </Button>
-              <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-500/10 text-xs" onClick={() => handleDeleteRoom(currentRoom.id)}>
-                <Trash2 className="w-3 h-3" />
+              <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-500/10 h-7 w-7 p-0 shrink-0" onClick={() => handleDeleteRoom(currentRoom.id)}>
+                <Trash2 className="w-3.5 h-3.5" />
               </Button>
             </>
           )}
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Video */}
-          <div className="flex-1 flex flex-col bg-black">
+          {/* Video panel */}
+          <div className="flex-1 flex flex-col bg-black min-w-0">
             <div className="flex-1 relative">
               {isYouTube(embedUrl) ? (
                 <iframe ref={iframeRef} src={`${embedUrl}&autoplay=0`} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen />
@@ -275,50 +284,58 @@ export default function CinemaPage() {
                 <video src={videoState.videoUrl} className="w-full h-full object-contain" />
               )}
             </div>
-            <div className="flex items-center gap-3 px-4 py-3 bg-black border-t border-yellow-500/20 shrink-0">
-              {canControlVideo(videoState) ? (
+            {/* Video kontrolleri */}
+            <div className="flex items-center gap-3 px-4 py-2 bg-black border-t border-yellow-500/20 shrink-0">
+              {showControls ? (
                 videoState.isPlaying ? (
-                  <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold">
+                  <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
                     <Pause className="w-4 h-4 mr-1" /> Duraklat
                   </Button>
                 ) : (
-                  <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold">
+                  <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
                     <Play className="w-4 h-4 mr-1" /> Oynat
                   </Button>
                 )
               ) : (
-                <span className="text-xs text-yellow-500/40 italic">Sadece oda kurucusu ve yetkililer kontrol edebilir</span>
+                <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın — kontrol oda kurucusunda</span>
               )}
-              <span className="text-xs text-yellow-500/60 ml-auto">
+              <span className="text-xs text-yellow-500/50 ml-auto">
                 {videoState.isPlaying ? "▶ Oynatılıyor" : "⏸ Duraklatıldı"}
               </span>
             </div>
           </div>
 
-          {/* Chat */}
-          <div className="w-72 flex flex-col bg-[#0a0a0a] border-l border-yellow-500/15">
-            <div className="px-3 py-2 border-b border-yellow-500/15 shrink-0">
-              <p className="text-xs text-yellow-500/60 font-semibold uppercase mb-1">İzleyenler ({participants.length})</p>
-              <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto">
+          {/* Chat paneli — floating chat baloncuğunun ÜSTÜNDE biter (pb-20) */}
+          <div className="w-64 sm:w-72 flex flex-col bg-[#0d0d0d] border-l border-yellow-500/15">
+            {/* İzleyenler */}
+            <div className="px-3 py-2 border-b border-yellow-500/10 shrink-0">
+              <p className="text-[10px] text-yellow-500/50 font-semibold uppercase mb-1.5">İzleyenler ({participants.length})</p>
+              <div className="flex flex-wrap gap-1 max-h-12 overflow-y-auto">
                 {participants.map((p, i) => (
-                  <span key={i} className={`text-xs font-medium ${roleColor(p.role)}`}>{p.displayName}</span>
+                  <span key={i} className="text-xs">
+                    <AnimatedUsername username={p.displayName} role={(p.role?.toUpperCase() || "USER") as any} />
+                  </span>
                 ))}
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {/* Mesajlar */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 pb-0">
               {messages.map(m => (
                 <div key={m.id} className="text-sm break-words">
-                  <span className={`font-semibold mr-1 ${roleColor(m.role)}`}>{m.displayName}:</span>
-                  <span className="text-gray-300">{m.text}</span>
+                  <span className="font-semibold mr-1">
+                    <AnimatedUsername username={m.displayName} role={(m.role?.toUpperCase() || "USER") as any} />
+                  </span>
+                  <span className="text-gray-300 text-xs">{m.text}</span>
                 </div>
               ))}
               <div ref={chatEndRef} />
             </div>
-            <div className="p-2 border-t border-yellow-500/15 shrink-0 flex gap-2">
+            {/* Input — floating chat baloncuğu ile çakışmaması için mb-20 */}
+            <div className="p-2 border-t border-yellow-500/15 shrink-0 flex gap-2 mb-20">
               <Input value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") sendMsg(); }}
                 placeholder={isAuthenticated ? "Mesaj yaz..." : "Giriş gerekiyor"}
                 disabled={!isAuthenticated}
-                className="bg-white/5 border-yellow-500/20 text-white text-sm h-8 placeholder:text-white/30" />
+                className="bg-white/5 border-yellow-500/20 text-white text-xs h-8 placeholder:text-white/30" />
               <Button size="icon" className="h-8 w-8 bg-yellow-500 hover:bg-yellow-400 text-black shrink-0" onClick={sendMsg} disabled={!isAuthenticated}>
                 <Send className="w-3 h-3" />
               </Button>
