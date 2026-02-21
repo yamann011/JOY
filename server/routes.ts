@@ -155,6 +155,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(events);
   });
 
+  app.post("/api/events", requireAuth, async (req, res) => {
+    const currentUser = await storage.getUser(req.userId!);
+    if (!currentUser) return res.status(401).json({ message: "Yetkisiz" });
+    const role = (currentUser.role || "").toUpperCase();
+    if (role !== "ADMIN" && role !== "MOD" && role !== "AJANS_SAHIBI") {
+      return res.status(403).json({ message: "Etkinlik oluşturma yetkin yok." });
+    }
+    const { title, description, agencyName, scheduledAt, participant1Name, participant2Name, isLive } = req.body;
+    if (!title || !agencyName || !scheduledAt) {
+      return res.status(400).json({ message: "Başlık, ajans adı ve tarih zorunludur." });
+    }
+    const event = await storage.createEvent({
+      title,
+      description: description || null,
+      agencyName,
+      agencyLogo: null,
+      participant1Name: participant1Name || null,
+      participant1Avatar: null,
+      participant2Name: participant2Name || null,
+      participant2Avatar: null,
+      participantCount: 0,
+      participants: [],
+      scheduledAt: new Date(scheduledAt),
+      isLive: isLive === true,
+      createdBy: currentUser.id,
+    });
+    res.status(201).json(event);
+  });
+
   app.get("/api/events/:id", requireAuth, async (req, res) => {
     const event = await storage.getEvent(req.params.id);
     if (!event) {
