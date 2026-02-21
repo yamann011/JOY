@@ -22,6 +22,7 @@ import Management from "@/pages/management";
 import Settings from "@/pages/settings";
 import UsersPage from "@/pages/users";
 import FilmPage from "@/pages/film";
+import CinemaPage from "@/pages/cinema";
 import VipPage from "@/pages/vip";
 import GamesPage from "@/pages/games";
 import NewsPage from "@/pages/news";
@@ -54,6 +55,7 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/users" component={UsersPage} />
       <Route path="/film" component={FilmPage} />
+      <Route path="/cinema" component={CinemaPage} />
       <Route path="/vip" component={VipPage} />
       <Route component={NotFound} />
     </Switch>

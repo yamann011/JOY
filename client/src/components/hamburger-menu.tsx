@@ -1,6 +1,6 @@
 import { useState, createContext, useContext } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, Home, Calendar, MessageSquare, Users, Shield, Settings, LogOut, Ticket, Crown, Star, Film, Gamepad2, Newspaper } from "lucide-react";
+import { Menu, X, Home, Calendar, MessageSquare, Users, Shield, Settings, LogOut, Ticket, Crown, Star, Film, Gamepad2, Newspaper, Tv2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -123,6 +123,7 @@ export function HamburgerMenuSidebar() {
     { href: "/games", icon: <Gamepad2 className="w-5 h-5" />, label: "Oyunlar", show: true },
     { href: "/news", icon: <Newspaper className="w-5 h-5" />, label: "Haberler", show: true },
     { href: "/film", icon: <Film className="w-5 h-5" />, label: "Film", show: true },
+    { href: "/cinema", icon: <Tv2 className="w-5 h-5" />, label: "Sinema Odaları", show: true },
     { href: "/vip", icon: <Crown className="w-5 h-5" />, label: "VIP Uygulamalar", show: canAccessVip },
     { href: "/tickets", icon: <Ticket className="w-5 h-5" />, label: "Destek", show: true },
     { href: "/management", icon: <Users className="w-5 h-5" />, label: "Yönetim", show: canAccessMod },

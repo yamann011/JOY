@@ -354,6 +354,266 @@ io.on("connection", (socket) => {
   });
 });
 
+// =====================================================
+// 🎬 SİNEMA ODALARI
+// =====================================================
+interface CinemaRoom {
+  id: string;
+  name: string;
+  passwordHash?: string;
+  videoUrl: string;
+  currentTime: number;
+  isPlaying: boolean;
+  createdBy: string;
+  createdAt: number;
+  participants: Map<string, { username: string; displayName: string; role: string }>;
+}
+
+interface CinemaMsg {
+  id: string;
+  userId: number;
+  username: string;
+  displayName: string;
+  role: string;
+  text: string;
+  createdAt: number;
+}
+
+const cinemaRooms = new Map<string, CinemaRoom>();
+const cinemaRoomMessages = new Map<string, CinemaMsg[]>();
+
+function cinemaCID(): string {
+  return `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function simplehash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return String(h);
+}
+
+const cinemaIO = io.of("/cinema");
+
+cinemaIO.use((socket, next) => {
+  try {
+    const auth = socket.handshake.auth || {};
+    const userId = Number((auth as any).userId);
+    const username = String((auth as any).username || "Misafir");
+    const displayName = String((auth as any).displayName || username);
+    const role = String((auth as any).role || "guest");
+    const safeUserId = Number.isFinite(userId) && userId > 0 ? userId : -1;
+    (socket.data as any).user = { userId: safeUserId, username, displayName, role };
+    return next();
+  } catch {
+    return next(new Error("AUTH_FAILED"));
+  }
+});
+
+cinemaIO.on("connection", (socket) => {
+  const u = (socket.data as any).user as { userId: number; username: string; displayName: string; role: string };
+  let currentRoomId: string | null = null;
+
+  // Oda listesini gönder
+  socket.emit("cinema:rooms", Array.from(cinemaRooms.values()).map(r => ({
+    id: r.id,
+    name: r.name,
+    hasPassword: !!r.passwordHash,
+    videoUrl: r.videoUrl,
+    isPlaying: r.isPlaying,
+    participantCount: r.participants.size,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt,
+  })));
+
+  // Oda oluştur
+  socket.on("cinema:create", (payload: { name?: string; videoUrl?: string; password?: string }) => {
+    if (u.userId <= 0) {
+      socket.emit("cinema:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
+      return;
+    }
+    const name = String(payload?.name || "").trim();
+    const videoUrl = String(payload?.videoUrl || "").trim();
+    if (!name || !videoUrl) {
+      socket.emit("cinema:error", { code: "INVALID", message: "İsim ve video URL gerekli." });
+      return;
+    }
+    const id = cinemaCID();
+    const room: CinemaRoom = {
+      id,
+      name,
+      passwordHash: payload?.password ? simplehash(payload.password) : undefined,
+      videoUrl,
+      currentTime: 0,
+      isPlaying: false,
+      createdBy: u.displayName,
+      createdAt: Date.now(),
+      participants: new Map(),
+    };
+    cinemaRooms.set(id, room);
+    cinemaRoomMessages.set(id, []);
+
+    // Broadcast yeni oda
+    cinemaIO.emit("cinema:room_added", {
+      id, name,
+      hasPassword: !!room.passwordHash,
+      videoUrl,
+      isPlaying: false,
+      participantCount: 0,
+      createdBy: room.createdBy,
+      createdAt: room.createdAt,
+    });
+    socket.emit("cinema:created", { roomId: id });
+  });
+
+  // Odaya katıl
+  socket.on("cinema:join", (payload: { roomId?: string; password?: string }) => {
+    const roomId = String(payload?.roomId || "");
+    const room = cinemaRooms.get(roomId);
+    if (!room) {
+      socket.emit("cinema:error", { code: "NOT_FOUND", message: "Oda bulunamadı." });
+      return;
+    }
+    if (room.passwordHash && simplehash(String(payload?.password || "")) !== room.passwordHash) {
+      socket.emit("cinema:error", { code: "WRONG_PASSWORD", message: "Şifre yanlış." });
+      return;
+    }
+    if (currentRoomId) {
+      const oldRoom = cinemaRooms.get(currentRoomId);
+      if (oldRoom) {
+        oldRoom.participants.delete(socket.id);
+        socket.leave(`cinema:${currentRoomId}`);
+        cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:participant_update", { count: oldRoom.participants.size });
+      }
+    }
+    currentRoomId = roomId;
+    room.participants.set(socket.id, { username: u.username, displayName: u.displayName, role: u.role });
+    socket.join(`cinema:${roomId}`);
+
+    // Mevcut durumu gönder
+    socket.emit("cinema:state", {
+      videoUrl: room.videoUrl,
+      currentTime: room.currentTime,
+      isPlaying: room.isPlaying,
+    });
+
+    const msgs = cinemaRoomMessages.get(roomId) || [];
+    socket.emit("cinema:messages_init", msgs.slice(-50));
+
+    cinemaIO.to(`cinema:${roomId}`).emit("cinema:participant_update", {
+      count: room.participants.size,
+      participants: Array.from(room.participants.values()),
+    });
+  });
+
+  // Oynat/Duraklat/Seek (Admin/Mod veya oda sahibi kontrolü yok, tüm üyeler yapabilir)
+  socket.on("cinema:play", (payload: { currentTime?: number }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    room.isPlaying = true;
+    room.currentTime = Number(payload?.currentTime ?? room.currentTime);
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: true, currentTime: room.currentTime, by: u.username });
+  });
+
+  socket.on("cinema:pause", (payload: { currentTime?: number }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    room.isPlaying = false;
+    room.currentTime = Number(payload?.currentTime ?? room.currentTime);
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: false, currentTime: room.currentTime, by: u.username });
+  });
+
+  socket.on("cinema:seek", (payload: { currentTime?: number }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    room.currentTime = Number(payload?.currentTime ?? 0);
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: room.isPlaying, currentTime: room.currentTime, by: u.username });
+  });
+
+  // URL değiştir (admin/mod veya oda kurucusu kontrolü)
+  socket.on("cinema:change_url", (payload: { videoUrl?: string }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room) return;
+    const role = u.role.toLowerCase();
+    if (!role.includes("admin") && !role.includes("moder") && !role.includes("asistan") && !role.includes("ajans") && room.createdBy !== u.displayName) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "URL değiştirmek için yetkin yok." });
+      return;
+    }
+    const url = String(payload?.videoUrl || "").trim();
+    if (!url) return;
+    room.videoUrl = url;
+    room.currentTime = 0;
+    room.isPlaying = false;
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:url_changed", { videoUrl: url, by: u.username });
+  });
+
+  // Sohbet
+  socket.on("cinema:message", (payload: { text?: string }) => {
+    if (!currentRoomId) return;
+    const text = String(payload?.text || "").trim();
+    if (!text) return;
+    const msg: CinemaMsg = {
+      id: `${Date.now()}-${Math.random()}`,
+      userId: u.userId,
+      username: u.username,
+      displayName: u.displayName,
+      role: u.role,
+      text,
+      createdAt: Date.now(),
+    };
+    const msgs = cinemaRoomMessages.get(currentRoomId) || [];
+    msgs.push(msg);
+    if (msgs.length > 200) msgs.shift();
+    cinemaRoomMessages.set(currentRoomId, msgs);
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:message", msg);
+  });
+
+  // Odayı sil (admin/mod)
+  socket.on("cinema:delete_room", (payload: { roomId?: string }) => {
+    const role = u.role.toLowerCase();
+    if (!role.includes("admin") && !role.includes("moder") && !role.includes("asistan") && !role.includes("ajans")) {
+      socket.emit("cinema:error", { code: "NO_PERMISSION", message: "Oda silmek için yetkin yok." });
+      return;
+    }
+    const rid = String(payload?.roomId || currentRoomId || "");
+    cinemaRooms.delete(rid);
+    cinemaRoomMessages.delete(rid);
+    cinemaIO.emit("cinema:room_removed", { roomId: rid });
+  });
+
+  socket.on("disconnect", () => {
+    if (currentRoomId) {
+      const room = cinemaRooms.get(currentRoomId);
+      if (room) {
+        room.participants.delete(socket.id);
+        cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:participant_update", {
+          count: room.participants.size,
+          participants: Array.from(room.participants.values()),
+        });
+        // Oda boşsa sil (5dk sonra)
+        if (room.participants.size === 0) {
+          setTimeout(() => {
+            const r = cinemaRooms.get(currentRoomId!);
+            if (r && r.participants.size === 0) {
+              cinemaRooms.delete(currentRoomId!);
+              cinemaRoomMessages.delete(currentRoomId!);
+              cinemaIO.emit("cinema:room_removed", { roomId: currentRoomId });
+            }
+          }, 5 * 60 * 1000);
+        }
+      }
+    }
+  });
+});
+
+// Cinema REST API helper - routes.ts'den çağrılacak
+export { cinemaRooms };
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
