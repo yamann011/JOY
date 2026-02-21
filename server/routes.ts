@@ -13,54 +13,55 @@ import {
   insertNewsSchema,
   insertNewsCommentSchema,
 } from "@shared/schema";
-import session from "express-session";
-import ConnectPgSimple from "connect-pg-simple";
-import MemoryStore from "memorystore";
-import { pool } from "./db";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
 
-declare module "express-session" {
-  interface SessionData {
-    userId?: string;
+const JWT_SECRET = process.env.SESSION_SECRET || "platform-secret-key-2024";
+const JWT_EXPIRES = "30d";
+
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+    }
   }
 }
 
-const MemoryStoreSession = MemoryStore(session);
-const PgSession = ConnectPgSimple(session);
+const jwtMiddleware = (req: Request, _res: Response, next: NextFunction) => {
+  const token = req.cookies?.["joy.token"];
+  if (token) {
+    try {
+      const payload = jwt.verify(token, JWT_SECRET) as any;
+      req.userId = payload.userId;
+    } catch {}
+  }
+  next();
+};
 
 const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-  if (!req.session.userId) {
+  if (!req.userId) {
     return res.status(401).json({ message: "Yetkisiz erişim" });
   }
   next();
 };
 
+function setAuthCookie(res: Response, userId: string) {
+  const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  res.cookie("joy.token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    path: "/",
+  });
+}
+
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   await storage.seedInitialData();
 
-  // ✅ Proxy arkasında (Cloudflare/Railway) cookie/sessions düzgün çalışsın
   app.set("trust proxy", 1);
-
-  // Session store: PostgreSQL varsa kalıcı, yoksa RAM
-  const sessionStore = pool
-    ? new PgSession({ pool, createTableIfMissing: true })
-    : new MemoryStoreSession({ checkPeriod: 86400000 });
-
-  app.use(
-    session({
-      name: "joy.sid",
-      secret: process.env.SESSION_SECRET || "platform-secret-key-2024",
-      resave: false,
-      saveUninitialized: false,
-      proxy: true,
-      store: sessionStore,
-      cookie: {
-        secure: "auto",
-        httpOnly: true,
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      },
-    }),
-  );
+  app.use(cookieParser());
+  app.use(jwtMiddleware);
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -69,23 +70,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/auth/login", async (req, res) => {
     try {
       const validatedData = loginSchema.parse(req.body);
-
       const user = await storage.getUserByUsername(validatedData.username);
       if (!user || user.password !== validatedData.password) {
         return res.status(401).json({ message: "Kullanıcı adı veya şifre hatalı" });
       }
-
       if ((user as any).isBanned) {
         return res.status(403).json({ message: "Hesabınız banlanmış. Lütfen destek ile iletişime geçin." });
       }
-
       await storage.updateUser(user.id, { isOnline: true });
-      req.session.userId = user.id;
-
-      if (validatedData.rememberMe) {
-        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-      }
-
+      setAuthCookie(res, user.id);
       const { password, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
     } catch (error: any) {
@@ -93,28 +86,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/auth/logout", requireAuth, async (req, res) => {
-    if (req.session.userId) {
-      await storage.updateUser(req.session.userId, { isOnline: false });
+  app.post("/api/auth/logout", async (req, res) => {
+    if (req.userId) {
+      await storage.updateUser(req.userId, { isOnline: false });
     }
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Çıkış yapılamadı" });
-      }
-      res.json({ message: "Çıkış başarılı" });
-    });
+    res.clearCookie("joy.token", { path: "/" });
+    res.json({ message: "Çıkış başarılı" });
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) {
+    if (!req.userId) {
       return res.status(401).json({ message: "Oturum bulunamadı" });
     }
-
-    const user = await storage.getUser(req.session.userId);
+    const user = await storage.getUser(req.userId);
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı" });
     }
-
     const { password, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
   });
@@ -126,7 +113,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (avatar !== undefined) updates.avatar = avatar;
     if (displayName) updates.displayName = displayName;
 
-    const user = await storage.updateUser(req.session.userId!, updates);
+    const user = await storage.updateUser(req.userId!, updates);
     if (!user) {
       return res.status(404).json({ message: "Kullanici bulunamadi" });
     }
@@ -147,7 +134,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/admin/users", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -171,7 +158,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/chat/groups", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (!currentUser) {
       return res.status(401).json({ message: "Kullanici bulunamadi" });
     }
@@ -197,7 +184,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/chat/private", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
       return res.status(403).json({ message: "Yetkisiz erisim" });
     }
@@ -263,10 +250,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const message = await storage.createChatMessage({
         ...validatedData,
-        userId: req.session.userId!,
+        userId: req.userId!,
       });
 
-      const user = await storage.getUser(req.session.userId!);
+      const user = await storage.getUser(req.userId!);
       if (!user) {
         res.status(201).json({ ...message, user: null });
         return;
@@ -280,7 +267,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/chat/groups", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -294,7 +281,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const group = await storage.createChatGroup({
         name: name.trim(),
         description: description?.trim() || null,
-        createdBy: req.session.userId!,
+        createdBy: req.userId!,
       });
 
       res.status(201).json(group);
@@ -304,7 +291,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/chat/groups/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -342,10 +329,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const message = await storage.createChatMessage({
         ...validatedData,
-        userId: req.session.userId!,
+        userId: req.userId!,
       });
 
-      const user = await storage.getUser(req.session.userId!);
+      const user = await storage.getUser(req.userId!);
       if (!user) {
         res.status(201).json({ ...message, user: null });
         return;
@@ -359,7 +346,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/chat/groups/:id/messages", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -369,7 +356,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/chat/messages/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -382,20 +369,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/tickets", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
 
     let tickets;
     if (currentUser?.role === "ADMIN" || currentUser?.role === "MOD") {
       tickets = await storage.getTickets();
     } else {
-      tickets = await storage.getTickets(req.session.userId);
+      tickets = await storage.getTickets(req.userId);
     }
 
     res.json(tickets);
   });
 
   app.get("/api/admin/tickets/recent", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -410,7 +397,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const ticket = await storage.createTicket({
         ...validatedData,
-        userId: req.session.userId!,
+        userId: req.userId!,
       });
 
       res.status(201).json(ticket);
@@ -420,7 +407,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.patch("/api/tickets/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -444,7 +431,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/tickets/:id/messages", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (!currentUser) {
         return res.status(401).json({ message: "Oturum bulunamadı" });
       }
@@ -479,7 +466,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/admin/announcements", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -488,7 +475,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const validatedData = insertAnnouncementSchema.parse(req.body);
       const announcement = await storage.createAnnouncement({
         ...validatedData,
-        createdBy: req.session.userId!,
+        createdBy: req.userId!,
       });
       res.status(201).json(announcement);
     } catch (error: any) {
@@ -497,7 +484,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/admin/announcements/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -510,7 +497,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/admin/users", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -532,7 +519,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.patch("/api/admin/users/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -554,12 +541,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/admin/users/:id/ban", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
-    if (req.params.id === req.session.userId) {
+    if (req.params.id === req.userId) {
       return res.status(400).json({ message: "Kendinizi banlayamazsınız" });
     }
 
@@ -573,7 +560,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/admin/users/:id/unban", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -588,12 +575,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/admin/users/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
 
-    if (req.params.id === req.session.userId) {
+    if (req.params.id === req.userId) {
       return res.status(400).json({ message: "Kendinizi silemezsiniz" });
     }
 
@@ -610,7 +597,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/settings/film", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -626,7 +613,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/settings/music", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -637,7 +624,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/vip/apps", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (!currentUser || !["VIP", "MOD", "ADMIN"].includes(currentUser.role)) {
       return res.status(403).json({ message: "VIP erisimi gerekli" });
     }
@@ -646,7 +633,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/vip/apps", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -668,7 +655,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/vip/apps/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -686,7 +673,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/admin/banners", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -695,7 +682,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/admin/banners", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -704,7 +691,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const validatedData = insertBannerSchema.parse(req.body);
       const banner = await storage.createBanner({
         ...validatedData,
-        createdBy: req.session.userId!,
+        createdBy: req.userId!,
       });
       res.status(201).json(banner);
     } catch (error: any) {
@@ -713,7 +700,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.patch("/api/admin/banners/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -726,7 +713,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/admin/banners/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -752,7 +739,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/settings/featured-members", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -777,7 +764,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/settings/branding", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -798,7 +785,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/admin/embedded-sites", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -811,7 +798,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/admin/embedded-sites", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -819,7 +806,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const validatedData = insertEmbeddedSiteSchema.parse(req.body);
       const site = await storage.createEmbeddedSite({
         ...validatedData,
-        createdBy: req.session.userId!,
+        createdBy: req.userId!,
       });
       res.json(site);
     } catch (error: any) {
@@ -828,7 +815,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.patch("/api/admin/embedded-sites/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -844,7 +831,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/admin/embedded-sites/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -860,7 +847,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.delete("/api/tickets/:id", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -886,7 +873,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/settings/social-links", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.session.userId!);
+    const currentUser = await storage.getUser(req.userId!);
     if (currentUser?.role !== "ADMIN") {
       return res.status(403).json({ message: "Yetkisiz erişim" });
     }
@@ -929,7 +916,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/pwa/config", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (currentUser?.role !== "ADMIN") {
         return res.status(403).json({ message: "Sadece adminler PWA ayarlarını değiştirebilir" });
       }
@@ -1075,8 +1062,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       );
 
       let userLiked = false;
-      if (req.session.userId) {
-        const like = await storage.getUserNewsLike(req.params.id, req.session.userId);
+      if (req.userId) {
+        const like = await storage.getUserNewsLike(req.params.id, req.userId);
         userLiked = !!like;
       }
 
@@ -1098,7 +1085,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/news", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (currentUser?.role !== "ADMIN") {
         return res.status(403).json({ message: "Sadece adminler haber ekleyebilir" });
       }
@@ -1106,7 +1093,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const validated = insertNewsSchema.parse(req.body);
       const news = await storage.createNews({
         ...validated,
-        createdBy: req.session.userId!,
+        createdBy: req.userId!,
       });
 
       res.status(201).json(news);
@@ -1117,7 +1104,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/news/:id", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (currentUser?.role !== "ADMIN") {
         return res.status(403).json({ message: "Sadece adminler haber düzenleyebilir" });
       }
@@ -1136,7 +1123,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/news/:id", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (currentUser?.role !== "ADMIN") {
         return res.status(403).json({ message: "Sadece adminler haber silebilir" });
       }
@@ -1157,11 +1144,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const validated = insertNewsCommentSchema.parse(req.body);
       const comment = await storage.createNewsComment({
         newsId: req.params.id,
-        userId: req.session.userId!,
+        userId: req.userId!,
         content: validated.content,
       });
 
-      const user = await storage.getUser(req.session.userId!);
+      const user = await storage.getUser(req.userId!);
       res.status(201).json({
         ...comment,
         user: user ? {
@@ -1179,7 +1166,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/news/:newsId/comments/:commentId", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (currentUser?.role !== "ADMIN" && currentUser?.role !== "MOD") {
         return res.status(403).json({ message: "Sadece adminler ve moderatörler yorum silebilir" });
       }
@@ -1197,15 +1184,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/news/:id/like", requireAuth, async (req, res) => {
     try {
-      const existingLike = await storage.getUserNewsLike(req.params.id, req.session.userId!);
+      const existingLike = await storage.getUserNewsLike(req.params.id, req.userId!);
       
       if (existingLike) {
-        await storage.deleteNewsLike(req.params.id, req.session.userId!);
+        await storage.deleteNewsLike(req.params.id, req.userId!);
         const updated = await storage.getNewsById(req.params.id);
         return res.json({ liked: false, likeCount: updated?.likeCount || 0 });
       }
 
-      await storage.createNewsLike(req.params.id, req.session.userId!);
+      await storage.createNewsLike(req.params.id, req.userId!);
       const updated = await storage.getNewsById(req.params.id);
       res.json({ liked: true, likeCount: updated?.likeCount || 0 });
     } catch (error: any) {
@@ -1215,7 +1202,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/admin/news", requireAuth, async (req, res) => {
     try {
-      const currentUser = await storage.getUser(req.session.userId!);
+      const currentUser = await storage.getUser(req.userId!);
       if (currentUser?.role !== "ADMIN") {
         return res.status(403).json({ message: "Sadece adminler tüm haberleri görebilir" });
       }
