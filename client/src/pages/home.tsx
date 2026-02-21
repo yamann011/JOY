@@ -388,48 +388,133 @@ function TeamSection() {
     },
   });
 
-  const teamRoles = ["ADMIN", "AJANS_SAHIBI", "MOD", "ASISTAN"];
-  const team = (users || []).filter((u: any) => teamRoles.includes(u.role));
-  if (!team.length) return null;
+  const patrons  = (users || []).filter((u: any) => u.role === "AJANS_SAHIBI");
+  const asistans = (users || []).filter((u: any) => u.role === "ASISTAN");
 
-  const roleInfo: Record<string, { label: string; icon: any; color: string }> = {
-    ADMIN: { label: "ADMIN", icon: Shield, color: "text-primary" },
-    AJANS_SAHIBI: { label: "PATRON", icon: Crown, color: "text-yellow-400" },
-    MOD: { label: "MOD", icon: Star, color: "text-amber-400" },
-    ASISTAN: { label: "ASİSTAN", icon: UserCheck, color: "text-blue-400" },
-  };
+  if (!patrons.length && !asistans.length) return null;
 
   return (
     <section className="py-16 px-4 bg-card/30">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-2 mb-8">
-          <Users className="w-6 h-6 text-primary" />
-          <h2 className="text-2xl font-bold text-gradient-gold">Ekibimiz</h2>
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-center gap-3 mb-12">
+          <Crown className="w-7 h-7 text-yellow-400" />
+          <h2 className="text-3xl font-black text-gradient-gold tracking-tight">Ajans Ekibi</h2>
+          <UserCheck className="w-7 h-7 text-blue-400" />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {team.map((member: any) => {
-            const info = roleInfo[member.role] || roleInfo.ASISTAN;
-            const Icon = info.icon;
-            return (
-              <Card key={member.id} className="p-4 text-center hover:border-primary/50 transition-colors">
-                <div className="w-14 h-14 rounded-full mx-auto mb-3 overflow-hidden border-2 border-primary/30 bg-primary/10 flex items-center justify-center">
-                  {member.avatar ? (
-                    <img src={member.avatar} alt={member.displayName} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-xl font-bold text-primary">{member.displayName?.charAt(0)}</span>
-                  )}
-                </div>
-                <p className="font-semibold text-sm truncate">{member.displayName}</p>
-                <div className={`flex items-center justify-center gap-1 mt-1 text-xs font-medium ${info.color}`}>
-                  <Icon className="w-3 h-3" />
-                  <span>{info.label}</span>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+
+        {/* PATRON köşesi */}
+        {patrons.length > 0 && (
+          <div className="mb-12">
+            <div className="flex items-center gap-2 mb-6 justify-center">
+              <Crown className="w-5 h-5 text-yellow-400" />
+              <h3 className="text-lg font-bold text-yellow-400 uppercase tracking-widest">Patronlar</h3>
+            </div>
+            <div className="flex flex-wrap gap-6 justify-center">
+              {patrons.map((member: any) => (
+                <PatronCard key={member.id} member={member} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ASISTAN köşesi */}
+        {asistans.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-6 justify-center">
+              <UserCheck className="w-5 h-5 text-blue-400" />
+              <h3 className="text-lg font-bold text-blue-400 uppercase tracking-widest">Asistanlar</h3>
+            </div>
+            <div className="flex flex-wrap gap-6 justify-center">
+              {asistans.map((member: any) => (
+                <AsistanCard key={member.id} member={member} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
+  );
+}
+
+function PatronCard({ member }: { member: any }) {
+  return (
+    <div className="flex flex-col items-center gap-3 group">
+      {/* Avatar — mavi glow halkası */}
+      <div
+        className="relative w-24 h-24 rounded-full overflow-hidden border-[3px] border-blue-500"
+        style={{ animation: "glow-ring 2s ease-in-out infinite" }}
+      >
+        {member.avatar ? (
+          <img src={member.avatar} alt={member.displayName} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-blue-900 to-black flex items-center justify-center">
+            <span className="text-3xl font-black text-blue-300">{member.displayName?.charAt(0)}</span>
+          </div>
+        )}
+        {/* Altın taç rozeti */}
+        <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-yellow-400 border-2 border-background flex items-center justify-center">
+          <Crown className="w-3.5 h-3.5 text-black" />
+        </div>
+      </div>
+
+      {/* Siyah → Mavi animasyonlu isim */}
+      <span
+        className="font-black text-base text-center"
+        style={{
+          background: "linear-gradient(270deg, #000000, #1d4ed8, #3b82f6, #000000)",
+          backgroundSize: "300% 300%",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+          animation: "patron-shimmer 2.5s ease infinite",
+        }}
+      >
+        {member.displayName}
+      </span>
+
+      <span className="text-xs font-bold text-yellow-400 tracking-widest uppercase">PATRON</span>
+    </div>
+  );
+}
+
+function AsistanCard({ member }: { member: any }) {
+  return (
+    <div className="flex flex-col items-center gap-3 group">
+      {/* Avatar — kırmızı glow halkası */}
+      <div
+        className="relative w-20 h-20 rounded-full overflow-hidden border-[3px] border-red-500"
+        style={{ animation: "glow-ring-red 2s ease-in-out infinite" }}
+      >
+        {member.avatar ? (
+          <img src={member.avatar} alt={member.displayName} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-red-900 to-blue-900 flex items-center justify-center">
+            <span className="text-2xl font-black text-red-200">{member.displayName?.charAt(0)}</span>
+          </div>
+        )}
+        {/* Mavi asistan rozeti */}
+        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-blue-500 border-2 border-background flex items-center justify-center">
+          <UserCheck className="w-3 h-3 text-white" />
+        </div>
+      </div>
+
+      {/* Kırmızı → Mavi animasyonlu isim */}
+      <span
+        className="font-black text-sm text-center"
+        style={{
+          background: "linear-gradient(270deg, #ef4444, #3b82f6, #ef4444, #1d4ed8)",
+          backgroundSize: "300% 300%",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+          animation: "asistan-shimmer 2.5s ease infinite",
+        }}
+      >
+        {member.displayName}
+      </span>
+
+      <span className="text-xs font-bold text-blue-400 tracking-widest uppercase">ASİSTAN</span>
+    </div>
   );
 }
 

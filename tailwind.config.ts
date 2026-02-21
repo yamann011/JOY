@@ -10,9 +10,31 @@ export default {
           "0%, 100%": { transform: "rotate(-10deg)" },
           "50%": { transform: "rotate(10deg)" },
         },
+        "patron-shimmer": {
+          "0%":   { backgroundPosition: "0% 50%" },
+          "50%":  { backgroundPosition: "100% 50%" },
+          "100%": { backgroundPosition: "0% 50%" },
+        },
+        "asistan-shimmer": {
+          "0%":   { backgroundPosition: "0% 50%" },
+          "50%":  { backgroundPosition: "100% 50%" },
+          "100%": { backgroundPosition: "0% 50%" },
+        },
+        "glow-ring": {
+          "0%, 100%": { boxShadow: "0 0 8px 2px rgba(59,130,246,0.6)" },
+          "50%":       { boxShadow: "0 0 18px 6px rgba(59,130,246,1)" },
+        },
+        "glow-ring-red": {
+          "0%, 100%": { boxShadow: "0 0 8px 2px rgba(239,68,68,0.6)" },
+          "50%":       { boxShadow: "0 0 18px 6px rgba(239,68,68,1)" },
+        },
       },
       animation: {
-        wiggle: "wiggle 0.6s ease-in-out infinite",
+        wiggle:           "wiggle 0.6s ease-in-out infinite",
+        "patron-shimmer": "patron-shimmer 2.5s ease infinite",
+        "asistan-shimmer":"asistan-shimmer 2.5s ease infinite",
+        "glow-ring":      "glow-ring 2s ease-in-out infinite",
+        "glow-ring-red":  "glow-ring-red 2s ease-in-out infinite",
       },
       borderRadius: {
         lg: ".5625rem",
