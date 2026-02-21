@@ -37,12 +37,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ✅ Proxy arkasında (Cloudflare/Railway) cookie/sessions düzgün çalışsın
   app.set("trust proxy", 1);
 
-  const isProd = process.env.NODE_ENV === "production";
-  const cookieSecure = process.env.COOKIE_SECURE === "true" || (isProd && process.env.DISABLE_SECURE_COOKIE !== "true");
-
-  // COOKIE_DOMAIN env varsa kullan, yoksa domain kısıtlama yok (railway.app, render.com vs. için)
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
-
   app.use(
     session({
       name: "joy.sid",
@@ -54,11 +48,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         checkPeriod: 86400000,
       }),
       cookie: {
-        secure: cookieSecure,
+        // Her sunucuda (Railway, Render, VPS, localhost) otomatik çalışır
+        // HTTPS'te secure=true, HTTP'de false — elle değiştirmeye gerek yok
+        secure: "auto",
         httpOnly: true,
-        sameSite: isProd ? "none" : "lax",
-        domain: cookieDomain,
-        maxAge: 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+        // domain hiç set edilmez = her zaman mevcut domain için geçerli
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 gün
       },
     }),
   );
