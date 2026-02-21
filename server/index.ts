@@ -401,7 +401,7 @@ io.on("connection", (socket) => {
   });
 
   // ─── DM: Özel Mesaj Gönder ────────────────────────────────────────────────
-  socket.on("dm:send", async (payload: { toUserId?: string; text?: string }) => {
+  socket.on("dm:send", async (payload: { toUserId?: string; toDisplayName?: string; toUsername?: string; text?: string }) => {
     if (!myIdStr) {
       socket.emit("dm:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
       return;
@@ -460,12 +460,15 @@ io.on("connection", (socket) => {
       });
     }
 
-    // Gönderenin conversation listesini güncelle
+    // Gönderenin conversation listesini güncelle — karşı tarafın adını payload veya mevcut mesajlardan al
+    const toDisplayName = String(payload?.toDisplayName || "").trim();
+    const toUsername = String(payload?.toUsername || "").trim();
+    const existingOtherMsg = existing.find(m => m.fromUserId === toUserId);
     socket.emit("dm:conversation_update", {
       withUserId: toUserId,
-      withUsername: existing.find(m => m.fromUserId === toUserId)?.fromUsername ?? toUserId,
-      withDisplayName: existing.find(m => m.fromUserId === toUserId)?.fromDisplayName ?? toUserId,
-      withRole: existing.find(m => m.fromUserId === toUserId)?.fromRole ?? "USER",
+      withUsername: existingOtherMsg?.fromUsername ?? toUsername || toUserId,
+      withDisplayName: existingOtherMsg?.fromDisplayName ?? toDisplayName || toUsername || toUserId,
+      withRole: existingOtherMsg?.fromRole ?? "USER",
       lastMsg: text,
       lastAt: msg.createdAt,
       unread: 0,

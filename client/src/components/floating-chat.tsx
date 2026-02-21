@@ -101,6 +101,7 @@ export function FloatingChat() {
   // ── DM state ───────────────────────────────────────────────────────────────
   const [convos, setConvos] = React.useState<DmConvo[]>([]);
   const [activeDm, setActiveDm] = React.useState<DmConvo | null>(null);
+  const activeDmRef = React.useRef<DmConvo | null>(null);
   const [dmHistory, setDmHistory] = React.useState<DmMsg[]>([]);
   const [dmText, setDmText] = React.useState("");
   const [unreadDm, setUnreadDm] = React.useState(0);
@@ -248,12 +249,20 @@ export function FloatingChat() {
       if (msg.fromUserId === myId || msg.toUserId === myId) {
         setDmHistory(prev => {
           const other = msg.fromUserId === myId ? msg.toUserId : msg.fromUserId;
-          if (activeDm?.withUserId === other) {
-            return [...prev, msg];
-          }
-          return prev;
+          // activeDm closure stale olabilir — withUserId any thread ile match et
+          const isCurrentThread = prev.some(m =>
+            (m.fromUserId === msg.fromUserId && m.toUserId === msg.toUserId) ||
+            (m.fromUserId === msg.toUserId && m.toUserId === msg.fromUserId)
+          ) || prev.length === 0;
+          if (!isCurrentThread && other !== (activeDmRef.current?.withUserId)) return prev;
+          // Optimistic duplicate kaldır
+          const withoutOptimistic = prev.filter(m =>
+            !(m.id.startsWith("optimistic-") && m.fromUserId === myId && m.text === msg.text)
+          );
+          // Gerçek mesajı duplicate kontrolüyle ekle
+          if (withoutOptimistic.some(m => m.id === msg.id)) return withoutOptimistic;
+          return [...withoutOptimistic, msg];
         });
-        // If not in DM tab or different conversation
         if (msg.fromUserId !== myId) {
           if (!open || activeTab !== "dm" || activeDm?.withUserId !== msg.fromUserId) {
             setUnreadDm(u => Math.min(u + 1, 99));
@@ -290,17 +299,47 @@ export function FloatingChat() {
   function sendDm() {
     const t = dmText.trim();
     if (!t || !activeDm || !socketRef.current?.connected) return;
-    socketRef.current.emit("dm:send", { toUserId: activeDm.withUserId, text: t });
+    // Optimistic update — mesajı hemen göster
+    const optimistic: DmMsg = {
+      id: `optimistic-${Date.now()}`,
+      fromUserId: myId,
+      fromUsername: (user as any)?.username || "",
+      fromDisplayName: (user as any)?.displayName || (user as any)?.username || "",
+      fromRole: (user as any)?.role || "",
+      toUserId: activeDm.withUserId,
+      text: t,
+      createdAt: Date.now(),
+      read: true,
+    };
+    setDmHistory(prev => [...prev, optimistic]);
+    socketRef.current.emit("dm:send", {
+      toUserId: activeDm.withUserId,
+      toDisplayName: activeDm.withDisplayName,
+      toUsername: activeDm.withUsername,
+      text: t,
+    });
     setDmText("");
   }
 
   function openDmWith(convo: DmConvo) {
     setActiveDm(convo);
+    activeDmRef.current = convo;
     setDmHistory([]);
     socketRef.current?.emit("dm:history", { withUserId: convo.withUserId });
     socketRef.current?.emit("dm:read", { withUserId: convo.withUserId });
     setConvos(prev => prev.map(c => c.withUserId === convo.withUserId ? { ...c, unread: 0 } : c));
     setUnreadDm(prev => Math.max(0, prev - (convo.unread || 0)));
+  }
+
+  function closeDm() {
+    setActiveDm(null);
+    activeDmRef.current = null;
+    setDmHistory([]);
+  }
+
+  function deleteDmConvo(withUserId: string) {
+    setConvos(prev => prev.filter(c => c.withUserId !== withUserId));
+    if (activeDm?.withUserId === withUserId) closeDm();
   }
 
   function startNewDm() {
@@ -378,7 +417,7 @@ export function FloatingChat() {
           <div className="flex items-center justify-between px-3 py-2 border-b border-yellow-500/20 shrink-0">
             <div className="flex items-center gap-2">
               {activeDm && activeTab === "dm" ? (
-                <button onClick={() => setActiveDm(null)} className="text-white/60 hover:text-white">
+                <button onClick={() => closeDm()} className="text-white/60 hover:text-white">
                   <ChevronLeft className="h-4 w-4" />
                 </button>
               ) : null}
@@ -400,6 +439,17 @@ export function FloatingChat() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Temizle</TooltipContent>
+                </Tooltip>
+              )}
+              {activeTab === "dm" && activeDm && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-red-400/70 hover:text-red-400 hover:bg-red-500/10 h-7 w-7"
+                      onClick={() => deleteDmConvo(activeDm.withUserId)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Sohbeti Sil</TooltipContent>
                 </Tooltip>
               )}
               {activeTab === "dm" && !activeDm && canStartDm && (
@@ -629,28 +679,34 @@ export function FloatingChat() {
                     ) : (
                       <div className="divide-y divide-white/5">
                         {convos.sort((a, b) => b.lastAt - a.lastAt).map(c => (
-                          <button key={c.withUserId} onClick={() => openDmWith(c)}
-                            className="w-full flex items-center gap-3 px-3 py-3 hover:bg-white/5 transition-colors text-left">
-                            <Avatar className="w-9 h-9 shrink-0">
-                              <AvatarFallback className="bg-blue-500/20 text-blue-400 text-sm">
-                                {c.withDisplayName?.[0]?.toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 min-w-0">
-                              <div className={cn("text-sm font-semibold truncate", roleColor(c.withRole))}>{c.withDisplayName}</div>
-                              <div className="text-xs text-white/50 truncate">{c.lastMsg}</div>
-                            </div>
-                            <div className="flex flex-col items-end gap-1 shrink-0">
-                              <span className="text-[10px] text-white/30">
-                                {new Date(c.lastAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                              {c.unread > 0 && (
-                                <span className="h-4 min-w-4 rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white flex items-center justify-center">
-                                  {c.unread}
+                          <div key={c.withUserId} className="group relative flex items-center hover:bg-white/5 transition-colors">
+                            <button onClick={() => openDmWith(c)}
+                              className="flex-1 flex items-center gap-3 px-3 py-3 text-left min-w-0">
+                              <Avatar className="w-9 h-9 shrink-0">
+                                <AvatarFallback className="bg-blue-500/20 text-blue-400 text-sm">
+                                  {c.withDisplayName?.[0]?.toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1 min-w-0">
+                                <div className={cn("text-sm font-semibold truncate", roleColor(c.withRole))}>{c.withDisplayName}</div>
+                                <div className="text-xs text-white/50 truncate">{c.lastMsg}</div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className="text-[10px] text-white/30">
+                                  {new Date(c.lastAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
                                 </span>
-                              )}
-                            </div>
-                          </button>
+                                {c.unread > 0 && (
+                                  <span className="h-4 min-w-4 rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white flex items-center justify-center">
+                                    {c.unread}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); deleteDmConvo(c.withUserId); }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-500/10">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
