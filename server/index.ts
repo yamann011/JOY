@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
+import { storage } from "./storage";
+import { runMigrations } from "./pg-migrate";
 
 const app = express();
 const httpServer = createServer(app);
@@ -405,6 +407,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // PostgreSQL varsa tabloları otomatik oluştur, sonra seed et
+  await runMigrations();
+  await storage.seedInitialData();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
