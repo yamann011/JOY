@@ -162,7 +162,7 @@ function CinemaAvatar({ name, avatar, role }: { name: string; avatar?: string; r
 // ─── Main ────────────────────────────────────────────────────────────────────
 export default function CinemaPage() {
   const { hasAnnouncement } = useAnnouncement();
-  const topBarOffset = hasAnnouncement ? 84 : 56;
+  const topBarOffset = hasAnnouncement ? 96 : 64;
   const { toast } = useToast();
 
   const socketRef = useRef<Socket | null>(null);
@@ -356,8 +356,8 @@ export default function CinemaPage() {
     const showControls = canControlVideo(videoState);
     return (
       <div className="flex flex-col bg-[#0a0a0a] text-white overflow-hidden" style={{ height: "100dvh" }}>
-        {/* Top bar — hamburger menü altında (dinamik offset) */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-black border-b border-yellow-500/20 shrink-0 min-h-[48px]"
+        {/* Top bar — hamburger + app kontrolleri altında, sağda da sabit app ikonları için boşluk */}
+        <div className="flex items-center gap-2 px-3 pl-10 pr-44 py-2 bg-black border-b border-yellow-500/20 shrink-0 min-h-[48px]"
           style={{ marginTop: `${topBarOffset}px` }}>
           <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 w-8">
             <ChevronLeft className="w-5 h-5" />
