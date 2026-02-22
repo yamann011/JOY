@@ -326,13 +326,21 @@ export class SqliteStorage implements IStorage {
   async updateUser(id: string, updates: any) {
     const user = this.db.prepare("SELECT * FROM users WHERE id = ?").get(id) as any;
     if (!user) return undefined;
-    const merged = { ...user, ...updates };
-    const specialPermsJson = merged.specialPerms !== undefined
-      ? (merged.specialPerms === null ? null : JSON.stringify(merged.specialPerms))
-      : user.specialPerms;
+    // updates içinde specialPerms geliyorsa önce JSON'a dönüştür
+    const updatesCopy = { ...updates };
+    if (updatesCopy.specialPerms !== undefined && updatesCopy.specialPerms !== null && typeof updatesCopy.specialPerms === "object") {
+      updatesCopy.specialPerms = JSON.stringify(updatesCopy.specialPerms);
+    }
+    const merged = { ...user, ...updatesCopy };
+    const specialPermsVal = merged.specialPerms ?? null;
     this.db.prepare(`
       UPDATE users SET username=?, password=?, displayName=?, role=?, avatar=?, level=?, isOnline=?, isBanned=?, specialPerms=? WHERE id=?
-    `).run(merged.username, merged.password, merged.displayName, merged.role, merged.avatar ?? null, merged.level, merged.isOnline ? 1 : 0, merged.isBanned ? 1 : 0, specialPermsJson, id);
+    `).run(
+      merged.username, merged.password, merged.displayName, merged.role,
+      merged.avatar ?? null, merged.level,
+      merged.isOnline ? 1 : 0, merged.isBanned ? 1 : 0,
+      specialPermsVal, id
+    );
     return mapUser(this.db.prepare("SELECT * FROM users WHERE id = ?").get(id));
   }
 

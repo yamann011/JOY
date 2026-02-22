@@ -1,7 +1,7 @@
 {
-  "name": "JOY Platform",
-  "short_name": "JOY",
-  "description": "JOY - Eğlence ve Sosyal Platform",
+  "name": "MOD - Eğlence Platformu",
+  "short_name": "MOD",
+  "description": "MOD - Eğlence ve Sosyal Platform",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

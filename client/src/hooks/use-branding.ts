@@ -10,14 +10,14 @@ export function useBranding() {
     queryKey: ["/api/settings/branding"],
     queryFn: async () => {
       const res = await fetch("/api/settings/branding");
-      if (!res.ok) return { siteName: "JOY", showFlag: true };
+      if (!res.ok) return { siteName: "MOD CLUB", showFlag: true };
       return res.json();
     },
     staleTime: 60000,
   });
 
   return {
-    siteName: data?.siteName || "JOY",
+    siteName: data?.siteName || "MOD CLUB",
     showFlag: data?.showFlag !== false,
   };
 }

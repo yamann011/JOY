@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import type { Announcement, Event, Banner } from "@shared/schema";
-import { Crown, Shield, Users, MessageSquare, Calendar, Sparkles, Star, Zap, LogIn, Megaphone, Play, Volume2, VolumeX, Newspaper, ChevronRight, UserCheck, Briefcase, UserPlus, X } from "lucide-react";
+import { Crown, Shield, Users, MessageSquare, Calendar, Sparkles, Star, Zap, LogIn, Megaphone, Play, Volume2, VolumeX, Newspaper, ChevronRight, UserCheck, Briefcase, UserPlus, X, Download } from "lucide-react";
 import { HamburgerMenu } from "@/components/hamburger-menu";
 import { useAnnouncement } from "@/hooks/use-announcement";
 import { EventCard } from "@/components/event-card";
@@ -610,6 +610,24 @@ export default function Home() {
   const [isMuted, setIsMuted] = useState(true);
   const onlineCount = useFakeOnlineCount();
   const [showRegister, setShowRegister] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstall, setShowInstall] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); setShowInstall(true); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      setDeferredPrompt(null); setShowInstall(false);
+    } else {
+      window.open("https://support.google.com/chrome/answer/9658361", "_blank");
+    }
+  };
 
   const { data: socialLinks } = useQuery({
     queryKey: ["/api/settings/social-links"],
@@ -644,7 +662,18 @@ export default function Home() {
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full gold-gradient flex items-center justify-center">
               <Crown className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
             </div>
-            <span className="text-lg sm:text-xl font-bold text-gradient-gold">{siteName}</span>
+            <style>{`
+              @keyframes modClubHeaderAnim {
+                0%,100% { background-position: 0% 50%; text-shadow: 0 0 8px #facc15; }
+                50%  { background-position: 100% 50%; text-shadow: 0 0 18px #fbbf24, 0 0 30px rgba(250,204,21,0.45); }
+              }
+            `}</style>
+            <span
+              className="text-lg sm:text-xl font-black tracking-widest bg-gradient-to-r from-yellow-300 via-black to-yellow-400 bg-clip-text text-transparent bg-[length:200%_auto]"
+              style={{ animation: "modClubHeaderAnim 2.5s ease-in-out infinite" }}
+            >
+              {siteName}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-background/95 border border-primary/30 text-xs" data-testid="home-online-count">
@@ -652,6 +681,16 @@ export default function Home() {
               <span className="text-primary font-medium">{onlineCount}</span>
               <span className="text-muted-foreground">online</span>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleInstall}
+              className="bg-yellow-500/10 border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20 text-xs px-2 h-8 gap-1"
+              title="Uygulamayı İndir"
+            >
+              <Download className="w-3 h-3" />
+              <span className="hidden sm:inline">İndir</span>
+            </Button>
             {youtubeId && (
               <Button
                 variant="outline"
@@ -756,6 +795,9 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Ajans Ekibi — Özellikler'in üstünde */}
+        <TeamSection />
+
         <section className="py-20 px-4">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-12">
@@ -763,7 +805,7 @@ export default function Home() {
                 <span className="text-gradient-gold">Ozellikler</span>
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                JOY size en iyi deneyimi sunmak icin tasarlandi
+                MOD CLUB size en iyi deneyimi sunmak icin tasarlandi
               </p>
             </div>
 
@@ -819,8 +861,6 @@ export default function Home() {
         {/* Son Haberler */}
         <LatestNewsSection />
 
-        {/* Asistan / Patron Köşesi */}
-        <TeamSection />
       </main>
 
       <footer className="border-t border-border py-8 px-4">
@@ -829,10 +869,10 @@ export default function Home() {
             <div className="w-8 h-8 rounded-full gold-gradient flex items-center justify-center">
               <Crown className="w-4 h-4 text-black" />
             </div>
-            <span className="font-semibold text-gradient-gold">JOY</span>
+            <span className="font-semibold text-gradient-gold">MOD CLUB</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            2024 JOY. Tum haklari saklidir.
+            2024 MOD CLUB. Tum haklari saklidir.
           </p>
         </div>
       </footer>
