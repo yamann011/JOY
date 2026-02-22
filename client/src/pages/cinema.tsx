@@ -264,22 +264,28 @@ export default function CinemaPage() {
     });
     socketRef.current = socket;
 
-    socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => {
-      setRooms(data);
-      // F5 koruması — son odaya otomatik geri katıl (leave → 1sn bekle → rejoin)
+    socket.on("connect", () => {
+      // Sayfa yenilenince 500ms içinde son odaya otomatik geri katıl
       try {
         const saved = localStorage.getItem("cinema_last_room");
         if (saved) {
           const savedRoom: CinemaRoomInfo = JSON.parse(saved);
-          const found = data.find(r => r.id === savedRoom.id);
-          if (found) {
-            pendingRejoinRef.current = found;
-            // Temiz leave gönder, 300ms sonra rejoin (daha az gecikme)
-            socket.emit("cinema:leave");
-            setTimeout(() => {
-              socket.emit("cinema:join", { roomId: found.id, password: "" });
-            }, 300);
-          } else {
+          pendingRejoinRef.current = savedRoom;
+          setTimeout(() => {
+            socket.emit("cinema:join", { roomId: savedRoom.id, password: savedRoom._savedPassword || "" });
+          }, 500);
+        }
+      } catch {}
+    });
+
+    socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => {
+      setRooms(data);
+      // Oda bulunamadıysa localStorage temizle
+      try {
+        const saved = localStorage.getItem("cinema_last_room");
+        if (saved) {
+          const savedRoom: CinemaRoomInfo = JSON.parse(saved);
+          if (!data.find(r => r.id === savedRoom.id)) {
             localStorage.removeItem("cinema_last_room");
           }
         }
@@ -423,6 +429,8 @@ export default function CinemaPage() {
 
     socket.on("cinema:error", ({ message }: { message: string }) => {
       toast({ title: "Hata", description: message, variant: "destructive" });
+      // Katılım hatası → kaydedilmiş oda geçersiz, temizle
+      try { localStorage.removeItem("cinema_last_room"); } catch {}
     });
 
     return () => { socket.disconnect(); };
