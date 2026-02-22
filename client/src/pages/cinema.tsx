@@ -251,7 +251,7 @@ export default function CinemaPage() {
             setTimeout(() => {
               socket.emit("cinema:join", { roomId: found.id, password: "" });
               setCurrentRoom(found);
-            }, 400);
+            }, 100);
           } else {
             localStorage.removeItem("cinema_last_room");
           }
@@ -546,7 +546,7 @@ export default function CinemaPage() {
                 <>
                   <iframe
                     ref={iframeRef}
-                    src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0)}
+                    src={iframeSrc}
                     className="absolute inset-0 w-full h-full"
                     allow="autoplay; fullscreen"
                     allowFullScreen
