@@ -289,11 +289,14 @@ export default function CinemaPage() {
     socket.on("cinema:state", (state: VideoState) => {
       stateReceivedAtRef.current = Date.now();
       playerReadyRef.current = false;
+      // Mevcut durumu syncWasPlayingRef'e yaz — ilk heartbeat'te yanlış reload olmasın
+      syncWasPlayingRef.current = state.isPlaying;
+      lastReloadTimeRef.current = Date.now();
       setNeedsClickToPlay(false);
       videoStateRef.current = state;
       localTimeRef.current = state.currentTime;
       setVideoState(state);
-      setIframeKey(k => k + 1); // iframe'i zorla yeniden yükle
+      setIframeKey(k => k + 1);
       setCurrentRoom(prev => {
         if (prev) return { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
         const pending = pendingRejoinRef.current;
