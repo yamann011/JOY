@@ -761,12 +761,19 @@ export default function CinemaPage() {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                   />
-                  {/* Owner: sadece ortayı kapat (alt YouTube kontrol barı açık kalır); izleyici: her şeyi kapat */}
+                  {/* Merkez tıklamayı engelle */}
                   <div className="absolute inset-0 z-10" style={{
                     bottom: showControls ? "48px" : "0",
                     pointerEvents: "auto",
                     background: "transparent"
                   }} />
+                  {/* Owner: YouTube kontrol barındaki play/pause butonunu kapat (~50px sol) */}
+                  {showControls && (
+                    <div className="absolute z-10" style={{
+                      bottom: 0, left: 0, width: "52px", height: "48px",
+                      pointerEvents: "auto", background: "transparent"
+                    }} />
+                  )}
                 </>
               ) : isDirect(videoState.videoUrl) ? (
                 <video
@@ -801,8 +808,8 @@ export default function CinemaPage() {
                 ) : (
                   <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın</span>
                 )}
-                {/* Ses kontrolü — herkes için */}
-                {isYouTube(videoState.videoUrl) && (
+                {/* Ses kontrolü — sadece izleyiciler için (oda sahibi YouTube ses barını kullanır) */}
+                {isYouTube(videoState.videoUrl) && !showControls && (
                   <div className="ml-auto flex items-center gap-2">
                     <button
                       className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-2 py-1 rounded-full transition-colors"
