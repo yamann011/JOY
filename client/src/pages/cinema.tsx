@@ -254,15 +254,19 @@ export default function CinemaPage() {
 
     socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => {
       setRooms(data);
-      // F5 koruması — son odaya otomatik geri katıl
+      // F5 koruması — son odaya otomatik geri katıl (leave → 1sn bekle → rejoin)
       try {
         const saved = localStorage.getItem("cinema_last_room");
         if (saved) {
           const savedRoom: CinemaRoomInfo = JSON.parse(saved);
           const found = data.find(r => r.id === savedRoom.id);
           if (found) {
-            pendingRejoinRef.current = found; // cinema:state handler bunu kullanacak
-            socket.emit("cinema:join", { roomId: found.id, password: "" });
+            pendingRejoinRef.current = found;
+            // Önce temiz leave gönder, 1 saniye sonra rejoin — mobil autoplay için kritik
+            socket.emit("cinema:leave");
+            setTimeout(() => {
+              socket.emit("cinema:join", { roomId: found.id, password: "" });
+            }, 1000);
           } else {
             localStorage.removeItem("cinema_last_room");
           }
