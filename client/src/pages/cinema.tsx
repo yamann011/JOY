@@ -208,6 +208,8 @@ export default function CinemaPage() {
   const [volume, setVolume] = useState(100);
   const volumeRef = useRef(100);
   const [videoDuration, setVideoDuration] = useState(0);
+  const videoDurationRef = useRef(0);
+  const durationPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [seekSliderVal, setSeekSliderVal] = useState(0);
   const seekDraggingRef = useRef(false);
   const pendingSeekRef = useRef<number | null>(null);
@@ -460,10 +462,16 @@ export default function CinemaPage() {
           const elapsed = vs?.isPlaying ? msSinceSet / 1000 : 0;
           const target = Math.max(0, Math.floor(seekTarget + elapsed));
           ytCommand(iframe, "seekTo", [target, true]);
-          // YouTube'dan süre ve anlık bilgi iste (slider max için)
-          try {
-            iframe.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: 1 }), "*");
-          } catch {}
+          // YouTube'dan süre bilgisi iste — gelmeyene kadar polling ile tekrar iste
+          if (durationPollRef.current) clearInterval(durationPollRef.current);
+          videoDurationRef.current = 0;
+          const pollIframe = iframe;
+          durationPollRef.current = setInterval(() => {
+            if (videoDurationRef.current > 0) {
+              clearInterval(durationPollRef.current!); durationPollRef.current = null; return;
+            }
+            try { pollIframe.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: 1 }), "*"); } catch {}
+          }, 800);
           setTimeout(() => {
             if (vs?.isPlaying) ytCommand(iframe, "playVideo");
             else ytCommand(iframe, "pauseVideo");
@@ -511,7 +519,11 @@ export default function CinemaPage() {
             if (!seekDraggingRef.current) setSeekSliderVal(ct);
           }
           if (d.info?.duration !== undefined && d.info.duration > 0) {
-            setVideoDuration(Number(d.info.duration));
+            const dur = Number(d.info.duration);
+            videoDurationRef.current = dur;
+            setVideoDuration(dur);
+            // Duration geldi — polling durdur
+            if (durationPollRef.current) { clearInterval(durationPollRef.current); durationPollRef.current = null; }
           }
         }
       } catch { /* yok */ }
@@ -596,6 +608,9 @@ export default function CinemaPage() {
 
   const leaveRoom = () => {
     socketRef.current?.emit("cinema:leave");
+    if (durationPollRef.current) { clearInterval(durationPollRef.current); durationPollRef.current = null; }
+    videoDurationRef.current = 0;
+    setVideoDuration(0);
     setCurrentRoom(null);
     setVideoState(null);
     setMessages([]);
