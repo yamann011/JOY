@@ -840,9 +840,13 @@ cinemaIO.on("connection", (socket) => {
     const room = cinemaRooms.get(currentRoomId);
     if (!room || !room.isPlaying) return;
     if (!canControlVideo(room)) return;
-    room.currentTime = Number(payload?.currentTime ?? room.currentTime);
+    // Client zamanını referans al ama server elapsed ile doğrula
+    const clientTime = Number(payload?.currentTime ?? calcCurrentTime(room));
+    const serverTime = calcCurrentTime(room);
+    // Fark 3 saniyeden azsa client zamanını kullan; yoksa server time
+    room.currentTime = Math.abs(clientTime - serverTime) < 3 ? clientTime : serverTime;
     room.lastSyncAt = Date.now();
-    // İzleyicilere canlı senkronizasyon gönder (sahibi hariç)
+    // İzleyicilere server-authoritative time ile sync gönder
     socket.to(`cinema:${currentRoomId}`).emit("cinema:sync", {
       isPlaying: true,
       currentTime: room.currentTime,

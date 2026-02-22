@@ -219,6 +219,7 @@ export default function CinemaPage() {
   const seekingByUsRef = useRef(false);
   const seekingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdSeekIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isSyncingRef = useRef(false); // çift play/seek tetiklenmesini önler
   const [messages, setMessages] = useState<CinemaMsg[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [participants, setParticipants] = useState<{ username: string; displayName: string; role: string }[]>([]);
@@ -340,12 +341,15 @@ export default function CinemaPage() {
       } else {
         // Aynı URL — sadece postMessage ile sync (iframe yeniden yüklenmesin)
         const iframe = iframeRef.current;
-        if (iframe && playerReadyRef.current) {
+        if (iframe && playerReadyRef.current && !isSyncingRef.current) {
+          isSyncingRef.current = true;
           const elapsed = state.isPlaying ? (Date.now() - stateReceivedAtRef.current) / 1000 : 0;
           const target = Math.floor(state.currentTime + elapsed);
+          seekingByUsRef.current = true;
+          setTimeout(() => { seekingByUsRef.current = false; }, 2000);
           ytCommand(iframe, "seekTo", [target, true]);
-          if (state.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
-          else ytCommand(iframe, "pauseVideo");
+          if (state.isPlaying) setTimeout(() => { ytCommand(iframe, "playVideo"); isSyncingRef.current = false; }, 50);
+          else { ytCommand(iframe, "pauseVideo"); isSyncingRef.current = false; }
         }
       }
     });
@@ -376,25 +380,28 @@ export default function CinemaPage() {
           const timeDiff = Math.abs(localTimeRef.current - currentTime);
 
           if (isSeeked && iframe) {
-            // Owner seek yaptı → playerReady'ye bakmadan anında seekTo, ses koru
+            // Owner seek yaptı → playerReady'ye bakmadan anında seekTo
+            if (isSyncingRef.current) return;
+            isSyncingRef.current = true;
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             if (!playerReadyRef.current) playerReadyRef.current = true;
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
-            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
-            else ytCommand(iframe, "pauseVideo");
+            if (isPlaying) setTimeout(() => { ytCommand(iframe, "playVideo"); isSyncingRef.current = false; }, 50);
+            else { ytCommand(iframe, "pauseVideo"); isSyncingRef.current = false; }
           } else if (timeDiff > 12) {
             // Çok büyük fark → iframe reload (son çare)
             playerReadyRef.current = false;
             lastReloadTimeRef.current = Date.now();
             setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
-          } else if (timeDiff > 0.5 && iframe) {
-            // Drift düzelt → seekTo, ses koru
+          } else if (timeDiff > 0.3 && iframe && !isSyncingRef.current) {
+            // Drift düzelt (0.3s eşiği) → seekTo
+            isSyncingRef.current = true;
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
-            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
-            else ytCommand(iframe, "pauseVideo");
+            if (isPlaying) setTimeout(() => { ytCommand(iframe, "playVideo"); isSyncingRef.current = false; }, 50);
+            else { ytCommand(iframe, "pauseVideo"); isSyncingRef.current = false; }
           } else if (!isPlaying) {
             // Duraklat — her zaman gönder
             if (iframe) ytCommand(iframe, "pauseVideo");
@@ -471,30 +478,30 @@ export default function CinemaPage() {
       try {
         const d = JSON.parse(e.data);
 
-        // YouTube player hazır → unmute + doğru pozisyona seek
+        // YouTube player hazır → doğru pozisyona seek + play/pause
         if (d.event === "onReady" || d.info === "ytPlayer") {
           playerReadyRef.current = true;
+          isSyncingRef.current = false; // önceki sync temizle
           setNeedsClickToPlay(false);
           const iframe = iframeRef.current;
           if (!iframe) return;
           const vs = videoStateRef.current;
-          // mute=0 ile yüklendiği için unmute gerekmez — sadece volume ayarla
+          // Volume localStorage'dan yükle (muted state dokunulmaz)
           const savedVol = parseInt(localStorage.getItem("cinema_volume") || "100", 10);
           volumeRef.current = savedVol;
           ytCommand(iframe, "setVolume", [savedVol]);
           setIsMuted(false);
-          // Doğru zamana git — iframe set edildiği andan bu yana geçen tam süreyi ekle
+          // Server-authoritative time: elapsed hesapla
           const seekTarget = pendingSeekRef.current ?? vs?.currentTime ?? 0;
           const refTime = iframeSrcSetAtRef.current || stateReceivedAtRef.current;
           const msSinceSet = Date.now() - refTime;
           const elapsed = vs?.isPlaying ? msSinceSet / 1000 : 0;
           const target = Math.max(0, Math.floor(seekTarget + elapsed));
+          isSyncingRef.current = true;
           seekingByUsRef.current = true;
           setTimeout(() => { seekingByUsRef.current = false; }, 2000);
           ytCommand(iframe, "seekTo", [target, true]);
-          ytCommand(iframe, "unMute");
-          ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
-          // YouTube'dan süre bilgisi iste — gelmeyene kadar polling ile tekrar iste
+          // Duration polling başlat
           if (durationPollRef.current) clearInterval(durationPollRef.current);
           videoDurationRef.current = 0;
           const pollIframe = iframe;
@@ -507,6 +514,7 @@ export default function CinemaPage() {
           setTimeout(() => {
             if (vs?.isPlaying) ytCommand(iframe, "playVideo");
             else ytCommand(iframe, "pauseVideo");
+            isSyncingRef.current = false;
           }, 300);
         }
 
