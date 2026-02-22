@@ -74,7 +74,7 @@ function toEmbedUrl(url: string, startTime = 0, autoplay = false): string {
   if (ytId) {
     const start = Math.floor(startTime);
     const ap = autoplay ? 1 : 0;
-    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=0&start=${start}&autoplay=${ap}&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=1&start=${start}&autoplay=${ap}&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
   }
   return url;
 }
@@ -214,6 +214,9 @@ export default function CinemaPage() {
   const [seekSliderVal, setSeekSliderVal] = useState(0);
   const seekDraggingRef = useRef(false);
   const pendingSeekRef = useRef<number | null>(null);
+  const prevInfoTimeRef = useRef<number>(0);
+  const seekingByUsRef = useRef(false);
+  const seekingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [messages, setMessages] = useState<CinemaMsg[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [participants, setParticipants] = useState<{ username: string; displayName: string; role: string }[]>([]);
@@ -463,6 +466,8 @@ export default function CinemaPage() {
           const msSinceSet = Date.now() - refTime;
           const elapsed = vs?.isPlaying ? msSinceSet / 1000 : 0;
           const target = Math.max(0, Math.floor(seekTarget + elapsed));
+          seekingByUsRef.current = true;
+          setTimeout(() => { seekingByUsRef.current = false; }, 2000);
           ytCommand(iframe, "seekTo", [target, true]);
           // YouTube'dan süre bilgisi iste — gelmeyene kadar polling ile tekrar iste
           if (durationPollRef.current) clearInterval(durationPollRef.current);
@@ -517,8 +522,17 @@ export default function CinemaPage() {
         if (d.event === "infoDelivery") {
           if (d.info?.currentTime !== undefined) {
             const ct = Number(d.info.currentTime);
+            const prev = prevInfoTimeRef.current;
+            prevInfoTimeRef.current = ct;
             localTimeRef.current = ct;
             if (!seekDraggingRef.current) setSeekSliderVal(ct);
+            // Owner YouTube seek bar ile ileri/geri aldıysa herkese sync et
+            const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
+            if (isOwner && !seekingByUsRef.current && prev > 0 && Math.abs(ct - prev) > 3) {
+              seekingByUsRef.current = true;
+              setTimeout(() => { seekingByUsRef.current = false; }, 2000);
+              socketRef.current?.emit("cinema:seek", { currentTime: ct });
+            }
           }
           if (d.info?.duration !== undefined && d.info.duration > 0) {
             const dur = Number(d.info.duration);
@@ -587,7 +601,14 @@ export default function CinemaPage() {
     if (!videoRef.current) ytCommand(iframeRef.current!, "pauseVideo");
   };
 
+  const markSeekingByUs = () => {
+    seekingByUsRef.current = true;
+    if (seekingTimerRef.current) clearTimeout(seekingTimerRef.current);
+    seekingTimerRef.current = setTimeout(() => { seekingByUsRef.current = false; }, 2000);
+  };
+
   const handleSeek = (newTime: number) => {
+    markSeekingByUs();
     localTimeRef.current = newTime;
     setSeekSliderVal(newTime);
     socketRef.current?.emit("cinema:seek", { currentTime: newTime });
@@ -733,8 +754,12 @@ export default function CinemaPage() {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                   />
-                  {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
-                  <div className="absolute inset-0 z-10" style={{ pointerEvents: showControls ? "none" : "all" }} />
+                  {/* Owner: sadece ortayı kapat (alt YouTube kontrol barı açık kalır); izleyici: her şeyi kapat */}
+                  <div className="absolute inset-0 z-10" style={{
+                    bottom: showControls ? "48px" : "0",
+                    pointerEvents: "auto",
+                    background: "transparent"
+                  }} />
                 </>
               ) : isDirect(videoState.videoUrl) ? (
                 <video
@@ -755,24 +780,6 @@ export default function CinemaPage() {
             </div>
             {/* Video kontrolleri */}
             <div className="flex flex-col bg-black border-t border-yellow-500/20 shrink-0">
-              {/* Seek bar — sadece owner */}
-              {showControls && (
-                <div className="px-3 pt-2 pb-1">
-                  <input
-                    type="range" min={0} max={videoDuration || 100} step={1}
-                    value={seekSliderVal}
-                    onChange={e => { seekDraggingRef.current = true; setSeekSliderVal(Number(e.target.value)); }}
-                    onMouseUp={e => { seekDraggingRef.current = false; handleSeek(Number((e.target as HTMLInputElement).value)); }}
-                    onTouchEnd={e => { seekDraggingRef.current = false; handleSeek(Number((e.currentTarget as HTMLInputElement).value)); }}
-                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                    style={{ accentColor: "#eab308" }}
-                  />
-                  <div className="flex justify-between text-[10px] text-yellow-500/40 mt-0.5">
-                    <span>{Math.floor(seekSliderVal / 60)}:{String(Math.floor(seekSliderVal % 60)).padStart(2,"0")}</span>
-                    <span>{Math.floor(videoDuration / 60)}:{String(Math.floor(videoDuration % 60)).padStart(2,"0")}</span>
-                  </div>
-                </div>
-              )}
               <div className="flex items-center gap-3 px-3 py-2">
                 {showControls ? (
                   videoState.isPlaying ? (
