@@ -33,9 +33,14 @@ const canModerate = (role?: string) =>
 export default function NewsPage() {
   const [, setLocation] = useLocation();
   const { siteName } = useBranding();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  if (!isAuthenticated) {
+    setLocation("/");
+    return null;
+  }
 
   const { data: news, isLoading } = useQuery<NewsItem[]>({
     queryKey: ["/api/news"],

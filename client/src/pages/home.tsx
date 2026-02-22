@@ -702,7 +702,7 @@ export default function Home() {
               title={`${pwaName} uygulamasını indir`}
             >
               <Download className="w-3 h-3" />
-              <span className="hidden sm:inline">İndir</span>
+              <span className="inline">İndir</span>
             </Button>
             {youtubeId && (
               <Button
@@ -826,8 +826,9 @@ export default function Home() {
               {features.map((feature, index) => (
                 <Card
                   key={index}
-                  className={`p-6 border-t-2 hover-elevate transition-all duration-300 ${(feature as any).animated ? "border-t-yellow-400 bg-gradient-to-br from-black to-gray-900" : "border-t-primary/50"}`}
+                  className={`p-6 border-t-2 hover-elevate transition-all duration-300 feature-glow-card ${(feature as any).animated ? "border-t-yellow-400 bg-gradient-to-br from-black to-gray-900" : "border-t-primary/50"}`}
                   data-testid={`feature-card-${index}`}
+                  style={{ animation: `featureGlow${index % 4} 3s ease-in-out infinite`, animationDelay: `${index * 0.4}s` }}
                 >
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${(feature as any).animated ? "bg-yellow-400/10" : "bg-primary/10"}`}>
                     <feature.icon className={`w-6 h-6 ${(feature as any).animated ? "text-yellow-400" : "text-primary"}`} />

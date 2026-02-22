@@ -609,6 +609,16 @@ function isYouTubeUrl(url: string): boolean {
   return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch|shorts|embed|live)|youtu\.be\/)/.test(url);
 }
 
+function hasSpecialPerm(role: string, specialPerms: any, perm: string): boolean {
+  const r = (role || "").toUpperCase();
+  if (r === "ADMIN" || r === "MOD") return true;
+  if (r === "VIP" || r === "AJANS_SAHIBI" || r === "ASISTAN") return true;
+  if (!specialPerms) return false;
+  const expired = specialPerms.expiresAt && new Date(specialPerms.expiresAt) <= new Date();
+  if (expired) return false;
+  return !!(specialPerms[perm]);
+}
+
 function simplehash(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -684,8 +694,7 @@ cinemaIO.on("connection", (socket) => {
       const dbUser = await storage.getUser(u.userId as any);
       if (dbUser) specialPerms = (dbUser as any).specialPerms || null;
     } catch {}
-    const isExpired = specialPerms?.expiresAt && new Date(specialPerms.expiresAt) <= new Date();
-    const hasAnimatedCinema = !!(specialPerms?.animatedCinema) && !isExpired;
+    const hasAnimatedCinema = hasSpecialPerm(dbUser?.role || u.role, specialPerms, "animatedCinema");
     const roomImage = hasAnimatedCinema ? (String(payload?.roomImage || "").trim() || undefined) : undefined;
     const animatedRoom = hasAnimatedCinema ? !!(payload?.animatedRoom) : false;
     const room: CinemaRoom = {
