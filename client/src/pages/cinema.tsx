@@ -65,14 +65,15 @@ function extractYouTubeId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-function toEmbedUrl(url: string, startTime = 0, autoplay = false): string {
+function toEmbedUrl(url: string, startTime = 0, _autoplay = false): string {
   if (!url) return "";
   const ytId = extractYouTubeId(url);
   if (ytId) {
     const start = Math.floor(startTime);
-    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&start=${start}&autoplay=${autoplay ? 1 : 0}&origin=${encodeURIComponent(window.location.origin)}`;
+    // Her zaman mute=1&autoplay=1 — tarayıcı sessiz autoplay'e izin verir
+    // Ses onLoad sonrası postMessage ile açılır
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&start=${start}&autoplay=1&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
   }
-  // Direct video URL — use as-is (handled by <video> tag)
   return url;
 }
 
@@ -190,7 +191,6 @@ export default function CinemaPage() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const [iframeSrc, setIframeSrc] = useState("");
-  const [needsPlay, setNeedsPlay] = useState(false); // autoplay engellenince "Devam Et" göster
 
   const [rooms, setRooms] = useState<CinemaRoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
@@ -279,10 +279,7 @@ export default function CinemaPage() {
       videoStateRef.current = state;
       setVideoState(state);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying } : prev);
-      setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime), state.isPlaying));
-      // Video oynatılıyorsa kullanıcı etkileşimi gerekebilir (autoplay politikası)
-      if (state.isPlaying) setNeedsPlay(true);
-      else setNeedsPlay(false);
+      setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime)));
     });
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
@@ -303,7 +300,7 @@ export default function CinemaPage() {
     socket.on("cinema:url_changed", ({ videoUrl, by }: { videoUrl: string; by: string }) => {
       setVideoState(prev => prev ? { ...prev, videoUrl, currentTime: 0, isPlaying: false } : prev);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl } : prev);
-      setIframeSrc(toEmbedUrl(videoUrl, 0, false));
+      setIframeSrc(toEmbedUrl(videoUrl, 0));
       toast({ title: `${by} videoyu değiştirdi` });
     });
 
@@ -406,8 +403,6 @@ export default function CinemaPage() {
   const handlePlay = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:play", { currentTime: time });
-    setNeedsPlay(false);
-    // Owner kendi iframesine de playVideo gönder
     if (!videoRef.current) {
       const iframe = iframeRef.current;
       if (iframe) {
@@ -435,7 +430,6 @@ export default function CinemaPage() {
     setCurrentRoom(null);
     setVideoState(null);
     setMessages([]);
-    setNeedsPlay(false);
     setIframeSrc("");
     try { localStorage.removeItem("cinema_last_room"); } catch {}
   };
@@ -533,37 +527,26 @@ export default function CinemaPage() {
                 <>
                   <iframe
                     ref={iframeRef}
-                    src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0, false)}
+                    src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0)}
                     className="absolute inset-0 w-full h-full"
                     allow="autoplay; fullscreen"
                     allowFullScreen
+                    onLoad={() => {
+                      // iframe yüklenince: sesi aç, duruma göre oynat/duraklat
+                      const iframe = iframeRef.current;
+                      if (!iframe) return;
+                      setTimeout(() => {
+                        ytCommand(iframe, "unMute");
+                        ytCommand(iframe, "setVolume", [100]);
+                        if (!videoStateRef.current?.isPlaying) {
+                          ytCommand(iframe, "pauseVideo");
+                        }
+                      }, 700);
+                    }}
                   />
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
                   {!showControls && (
                     <div className="absolute inset-0 z-10" style={{ pointerEvents: "all" }} />
-                  )}
-                  {/* Autoplay engellenince "Devam Et" overlay — tüm kullanıcılara */}
-                  {videoState.isPlaying && needsPlay && (
-                    <div
-                      className="absolute inset-0 z-20 flex items-center justify-center bg-black/75 cursor-pointer"
-                      onClick={() => {
-                        const iframe = iframeRef.current;
-                        const t = Math.floor(localTimeRef.current);
-                        if (iframe) {
-                          ytCommand(iframe, "seekTo", [t, true]);
-                          setTimeout(() => ytCommand(iframe, "playVideo"), 100);
-                        }
-                        setNeedsPlay(false);
-                      }}
-                    >
-                      <div className="flex flex-col items-center gap-3 select-none">
-                        <div className="w-20 h-20 rounded-full bg-yellow-500/20 border-2 border-yellow-400 flex items-center justify-center">
-                          <Play className="w-10 h-10 text-yellow-400 ml-1" />
-                        </div>
-                        <span className="text-white text-base font-bold">Yayına Devam Et</span>
-                        <span className="text-yellow-400/60 text-xs">Tıkla ve izle</span>
-                      </div>
-                    </div>
                   )}
                 </>
               ) : isDirect(videoState.videoUrl) ? (
