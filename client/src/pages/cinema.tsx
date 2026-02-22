@@ -217,6 +217,7 @@ export default function CinemaPage() {
   const prevInfoTimeRef = useRef<number>(0);
   const seekingByUsRef = useRef(false);
   const seekingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdSeekIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [messages, setMessages] = useState<CinemaMsg[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [participants, setParticipants] = useState<{ username: string; displayName: string; role: string }[]>([]);
@@ -471,10 +472,17 @@ export default function CinemaPage() {
           const iframe = iframeRef.current;
           if (!iframe) return;
           const vs = videoStateRef.current;
-          // Sesi aç — user sayfayla etkileşime girdi (oda katılma butonu)
-          ytCommand(iframe, "unMute");
-          ytCommand(iframe, "setVolume", [volumeRef.current]);
-          setIsMuted(false);
+          // Ses aç — mute=1 ile yüklendi, açılması gerek
+          const savedVol = parseInt(localStorage.getItem("cinema_volume") || "100", 10);
+          volumeRef.current = savedVol;
+          const applyAudio = () => {
+            ytCommand(iframe, "unMute");
+            ytCommand(iframe, "setVolume", [savedVol]);
+            setIsMuted(false);
+          };
+          applyAudio();
+          // Backup: 400ms sonra tekrar (YouTube bazen ilk unMute'u görmezden gelir)
+          setTimeout(applyAudio, 400);
           // Doğru zamana git — iframe set edildiği andan bu yana geçen tam süreyi ekle
           const seekTarget = pendingSeekRef.current ?? vs?.currentTime ?? 0;
           const refTime = iframeSrcSetAtRef.current || stateReceivedAtRef.current;
@@ -632,10 +640,30 @@ export default function CinemaPage() {
     const iframe = iframeRef.current;
     if (iframe) {
       ytCommand(iframe, "seekTo", [Math.floor(newTime), true]);
-      if (videoState?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 200);
+      ytCommand(iframe, "unMute");
+      ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
+      if (videoStateRef.current?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
     }
     const videoEl = videoRef.current;
     if (videoEl) videoEl.currentTime = newTime;
+  };
+
+  // Basılı tutarak sarma — her 200ms'de +/-5s, bırakınca durur
+  const startHoldSeek = (direction: 1 | -1) => {
+    if (holdSeekIntervalRef.current) return;
+    const step = () => {
+      const next = Math.max(0, localTimeRef.current + direction * 5);
+      handleSeek(next);
+    };
+    step();
+    holdSeekIntervalRef.current = setInterval(step, 200);
+  };
+
+  const stopHoldSeek = () => {
+    if (holdSeekIntervalRef.current) {
+      clearInterval(holdSeekIntervalRef.current);
+      holdSeekIntervalRef.current = null;
+    }
   };
 
   const joinRoom = (room: CinemaRoomInfo, password = "") => {
@@ -796,8 +824,16 @@ export default function CinemaPage() {
               <div className="flex items-center gap-3 px-3 py-2">
                 {showControls ? (
                   <>
-                    <Button onClick={() => handleSeek(Math.max(0, localTimeRef.current - 10))} size="sm" variant="ghost" className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 px-2 font-bold">
-                      ⏪ -10s
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 px-2 font-bold select-none"
+                      onMouseDown={() => startHoldSeek(-1)}
+                      onMouseUp={stopHoldSeek}
+                      onMouseLeave={stopHoldSeek}
+                      onTouchStart={() => startHoldSeek(-1)}
+                      onTouchEnd={stopHoldSeek}
+                    >
+                      ⏪ -5s
                     </Button>
                     {videoState.isPlaying ? (
                       <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
@@ -808,8 +844,16 @@ export default function CinemaPage() {
                         <Play className="w-4 h-4 mr-1" /> Oynat
                       </Button>
                     )}
-                    <Button onClick={() => handleSeek(localTimeRef.current + 10)} size="sm" variant="ghost" className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 px-2 font-bold">
-                      +10s ⏩
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 px-2 font-bold select-none"
+                      onMouseDown={() => startHoldSeek(1)}
+                      onMouseUp={stopHoldSeek}
+                      onMouseLeave={stopHoldSeek}
+                      onTouchStart={() => startHoldSeek(1)}
+                      onTouchEnd={stopHoldSeek}
+                    >
+                      +5s ⏩
                     </Button>
                   </>
                 ) : (
@@ -823,16 +867,19 @@ export default function CinemaPage() {
                       onClick={() => {
                         const iframe = iframeRef.current;
                         if (!iframe) return;
+                        const playing = videoStateRef.current?.isPlaying;
                         if (isMuted) {
                           ytCommand(iframe, "unMute");
                           ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
                           setIsMuted(false);
+                          localStorage.setItem("cinema_muted", "0");
+                          if (playing) setTimeout(() => ytCommand(iframe, "playVideo"), 30);
                         } else {
                           ytCommand(iframe, "mute");
                           setIsMuted(true);
+                          localStorage.setItem("cinema_muted", "1");
+                          if (playing) setTimeout(() => ytCommand(iframe, "playVideo"), 30);
                         }
-                        // Ses değişikliği sonrası video duruyorsa koru
-                        if (videoStateRef.current?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 300);
                       }}
                     >
                       {isMuted ? "🔇" : "🔊"}
@@ -844,11 +891,13 @@ export default function CinemaPage() {
                         const v = Number(e.target.value);
                         setVolume(v);
                         volumeRef.current = v;
+                        localStorage.setItem("cinema_volume", String(v));
                         const iframe = iframeRef.current;
                         if (!iframe) return;
+                        const playing = videoStateRef.current?.isPlaying;
                         if (v === 0) { ytCommand(iframe, "mute"); setIsMuted(true); }
                         else { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [v]); setIsMuted(false); }
-                        if (videoStateRef.current?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 300);
+                        if (playing) setTimeout(() => ytCommand(iframe, "playVideo"), 30);
                       }}
                       className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
                       style={{ accentColor: "#eab308" }}
