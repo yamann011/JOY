@@ -245,22 +245,6 @@ export default function CinemaPage() {
 
     socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => {
       setRooms(data);
-      // F5 koruması — son odaya otomatik geri katıl (şifresiz odalar veya oda sahibi)
-      try {
-        const saved = localStorage.getItem("cinema_last_room");
-        if (saved) {
-          const savedRoom: CinemaRoomInfo = JSON.parse(saved);
-          const found = data.find(r => r.id === savedRoom.id);
-          if (found) {
-            setTimeout(() => {
-              socket.emit("cinema:join", { roomId: found.id, password: "" });
-              setCurrentRoom(found);
-            }, 100);
-          } else {
-            localStorage.removeItem("cinema_last_room");
-          }
-        }
-      } catch {}
     });
     socket.on("cinema:room_added", (room: CinemaRoomInfo) =>
       setRooms(prev => [...prev.filter(r => r.id !== room.id), room])
@@ -281,6 +265,7 @@ export default function CinemaPage() {
 
     socket.on("cinema:state", (state: VideoState) => {
       videoStateRef.current = state;
+      localTimeRef.current = state.currentTime; // Doğru pozisyonu kaydet
       setVideoState(state);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying } : prev);
       setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime)));
@@ -360,13 +345,15 @@ export default function CinemaPage() {
           setTimeout(() => {
             ytCommand(iframe, "unMute");
             ytCommand(iframe, "setVolume", [100]);
-            if (videoStateRef.current?.isPlaying) {
-              ytCommand(iframe, "seekTo", [Math.floor(localTimeRef.current), true]);
-              setTimeout(() => ytCommand(iframe, "playVideo"), 100);
+            const vs = videoStateRef.current;
+            if (vs?.isPlaying) {
+              const seekTo = Math.floor(vs.currentTime ?? localTimeRef.current);
+              ytCommand(iframe, "seekTo", [seekTo, true]);
+              setTimeout(() => ytCommand(iframe, "playVideo"), 150);
             } else {
               ytCommand(iframe, "pauseVideo");
             }
-          }, 300);
+          }, 400);
         }
 
         // infoDelivery — owner seek tespiti + localTimeRef güncelle
@@ -569,19 +556,20 @@ export default function CinemaPage() {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                     onLoad={() => {
-                      // onReady zaten hallediyor, bu sadece fallback
                       const iframe = iframeRef.current;
                       if (!iframe) return;
                       setTimeout(() => {
                         ytCommand(iframe, "unMute");
                         ytCommand(iframe, "setVolume", [100]);
-                        if (videoStateRef.current?.isPlaying) {
-                          ytCommand(iframe, "seekTo", [Math.floor(localTimeRef.current), true]);
-                          setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+                        const vs = videoStateRef.current;
+                        if (vs?.isPlaying) {
+                          const seekTo = Math.floor(vs.currentTime ?? localTimeRef.current);
+                          ytCommand(iframe, "seekTo", [seekTo, true]);
+                          setTimeout(() => ytCommand(iframe, "playVideo"), 200);
                         } else {
                           ytCommand(iframe, "pauseVideo");
                         }
-                      }, 1500);
+                      }, 1800);
                     }}
                   />
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
