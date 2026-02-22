@@ -73,6 +73,37 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { username, password, displayName } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "Kullanıcı adı ve şifre gerekli" });
+      }
+      if (username.length < 3 || username.length > 20) {
+        return res.status(400).json({ message: "Kullanıcı adı 3-20 karakter olmalı" });
+      }
+      if (password.length < 4) {
+        return res.status(400).json({ message: "Şifre en az 4 karakter olmalı" });
+      }
+      const existing = await storage.getUserByUsername(username);
+      if (existing) {
+        return res.status(409).json({ message: "Bu kullanıcı adı zaten alınmış" });
+      }
+      const user = await storage.createUser({
+        username: username.trim(),
+        password,
+        displayName: (displayName || username).trim(),
+        role: "user",
+        level: 1,
+      });
+      setAuthCookie(res, user.id);
+      const { password: _pw, ...userWithoutPassword } = user as any;
+      res.status(201).json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Kayıt başarısız" });
+    }
+  });
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const validatedData = loginSchema.parse(req.body);

@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import type { Announcement, Event, Banner } from "@shared/schema";
-import { Crown, Shield, Users, MessageSquare, Calendar, Sparkles, Star, Zap, LogIn, Megaphone, Play, Volume2, VolumeX, Newspaper, ChevronRight, UserCheck, Briefcase } from "lucide-react";
+import { Crown, Shield, Users, MessageSquare, Calendar, Sparkles, Star, Zap, LogIn, Megaphone, Play, Volume2, VolumeX, Newspaper, ChevronRight, UserCheck, Briefcase, UserPlus, X } from "lucide-react";
 import { HamburgerMenu } from "@/components/hamburger-menu";
 import { useAnnouncement } from "@/hooks/use-announcement";
 import { EventCard } from "@/components/event-card";
@@ -518,12 +518,97 @@ function AsistanCard({ member }: { member: any }) {
   );
 }
 
+function RegisterModal({ onClose }: { onClose: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const { login } = useAuth();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) return;
+    setIsLoading(true);
+    try {
+      const response = await apiRequest("POST", "/api/auth/register", { username, password, displayName });
+      const user = await response.json();
+      login(user);
+      toast({ title: "Kayıt başarılı!", description: "Hoş geldin " + (user.displayName || username) });
+      onClose();
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({ title: "Hata", description: error.message || "Kayıt başarısız", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-[#111] border border-primary/30 rounded-2xl p-8 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-primary" />
+            <h2 className="text-xl font-bold text-white">Kayıt Ol</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleRegister} className="flex flex-col gap-4">
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Kullanıcı Adı *</label>
+            <Input
+              type="text"
+              placeholder="En az 3 karakter"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              maxLength={20}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Görünen Ad (opsiyonel)</label>
+            <Input
+              type="text"
+              placeholder="Profilinde görünecek isim"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              maxLength={30}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Şifre *</label>
+            <Input
+              type="password"
+              placeholder="En az 4 karakter"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              minLength={4}
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={isLoading || !username || !password}
+            className="w-full bg-green-600 hover:bg-green-500 text-white mt-2"
+          >
+            {isLoading ? "Kayıt yapılıyor..." : "Kayıt Ol"}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { isAuthenticated } = useAuth();
   const { youtubeId } = useBackgroundMusic();
   const { siteName, showFlag } = useBranding();
   const [isMuted, setIsMuted] = useState(true);
   const onlineCount = useFakeOnlineCount();
+  const [showRegister, setShowRegister] = useState(false);
 
   const { data: socialLinks } = useQuery({
     queryKey: ["/api/settings/social-links"],
@@ -634,6 +719,14 @@ export default function Home() {
               >
                 Daha Fazla Bilgi
               </Button>
+              <Button
+                size="lg"
+                className="bg-green-600 hover:bg-green-500 text-white px-8 h-12 text-lg transition-colors"
+                onClick={() => setShowRegister(true)}
+              >
+                <UserPlus className="w-5 h-5 mr-2" />
+                Kayıt Ol
+              </Button>
             </div>
 
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
@@ -724,6 +817,8 @@ export default function Home() {
           </p>
         </div>
       </footer>
+
+      {showRegister && <RegisterModal onClose={() => setShowRegister(false)} />}
     </div>
   );
 }
