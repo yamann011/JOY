@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { storage } from "./storage";
+import { calculateLevel } from "./sqlite-storage";
 import { runMigrations } from "./pg-migrate";
 
 const app = express();
@@ -57,9 +58,11 @@ type ChatMsg = {
   username: string;
   displayName: string;
   role: string;
+  level: number;
+  xp: number;
   avatar?: string;
   text: string;
-  replyTo?: string; // Reply yapılan mesaj ID'si
+  replyTo?: string;
   createdAt: number;
 };
 
@@ -107,26 +110,53 @@ function canModerateRole(actorRole: string, targetRole: string): boolean {
   return false;
 }
 
-// Socket auth (MISAFİR İZİNLİ) ✅ AUTH_REQUIRED kalkar
-io.use((socket, next) => {
+// Socket auth — DB'den güncel role/level/xp çek
+io.use(async (socket, next) => {
   try {
     const auth = socket.handshake.auth || {};
-
     const rawId = (auth as any).userId;
     const userId = Number(rawId);
-    const username = String((auth as any).username || "Misafir");
-    const displayName = String((auth as any).displayName || username);
-    const role = String((auth as any).role || "guest");
-
-    // Login yoksa guest'e -1 veriyoruz
     const safeUserId = Number.isFinite(userId) && userId > 0 ? userId : -1;
 
-    (socket.data as any).user = { userId: safeUserId, username, displayName, role };
+    let username = String((auth as any).username || "Misafir");
+    let displayName = String((auth as any).displayName || username);
+    let role = String((auth as any).role || "guest");
+    let level = 1;
+    let xp = 0;
+
+    // DB'den güncel rol + xp/level (client token'ı stale olabilir)
+    if (safeUserId > 0) {
+      try {
+        const dbUser = await storage.getUser(String(safeUserId));
+        if (dbUser) {
+          role = (dbUser as any).role || role;
+          level = calculateLevel((dbUser as any).xp || 0);
+          xp = (dbUser as any).xp || 0;
+          displayName = dbUser.displayName || displayName;
+        }
+      } catch {}
+    }
+
+    (socket.data as any).user = { userId: safeUserId, username, displayName, role, level, xp };
     return next();
   } catch {
     return next(new Error("AUTH_FAILED"));
   }
 });
+
+// Online time XP — her 5 dakikada tüm online kullanıcılara 1 XP
+setInterval(() => {
+  const seen = new Set<number>();
+  Array.from(io.sockets.sockets.values()).forEach((sock: any) => {
+    const su = (sock.data as any).user;
+    if (su?.userId > 0 && !seen.has(su.userId)) {
+      seen.add(su.userId);
+      (storage as any).addUserXP(String(su.userId), 1).then((res: { xp: number; level: number }) => {
+        su.xp = res.xp; su.level = res.level;
+      }).catch(() => {});
+    }
+  });
+}, 5 * 60 * 1000);
 
 io.on("connection", (socket) => {
   const u = (socket.data as any).user as {
@@ -134,6 +164,8 @@ io.on("connection", (socket) => {
     username: string;
     displayName: string;
     role: string;
+    level: number;
+    xp: number;
   };
 
   // Ban kontrolü (guest'e dokunma)
@@ -225,6 +257,8 @@ io.on("connection", (socket) => {
       username: u.username,
       displayName: u.displayName,
       role: roleStr(u.role),
+      level: u.level || 1,
+      xp: u.xp || 0,
       avatar: payload?.avatar,
       text,
       replyTo: payload?.replyTo,
@@ -235,6 +269,14 @@ io.on("connection", (socket) => {
     if (recentMessages.length > RECENT_LIMIT) recentMessages.shift();
 
     io.to("global").emit("chat:message", msg);
+
+    // XP kazan: mesaj başına 10 XP (guest hariç)
+    if (u.userId > 0) {
+      (storage as any).addUserXP(String(u.userId), 10).then((res: { xp: number; level: number }) => {
+        u.xp = res.xp;
+        u.level = res.level;
+      }).catch(() => {});
+    }
   });
 
   // Mesaj silme (Admin/Mod/VIP) + kullanıcı kendi mesajını silebilir

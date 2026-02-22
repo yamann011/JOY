@@ -26,6 +26,8 @@ type ChatMessage = {
   avatar?: string;
   text: string;
   replyTo?: string;
+  level?: number;
+  xp?: number;
   createdAt: number;
 };
 
@@ -60,6 +62,18 @@ function roleBadge(role?: string) {
   if (r.includes("asistan")) return { label: "ASİSTAN", color: "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30",     icon: <Shield className="h-3 w-3" /> };
   if (r.includes("vip"))     return { label: "VIP",     color: "bg-rose-500/20 text-rose-300 border border-rose-500/30",     icon: <Crown className="h-3 w-3" /> };
   return                             { label: "USER",   color: "bg-white/8 text-white/35 border border-white/10",            icon: null };
+}
+
+function levelBadge(level?: number) {
+  const l = level || 1;
+  if (l >= 500) return { label: `★ ${l}`, color: "bg-gradient-to-r from-yellow-400 to-pink-400 text-black border-0 shadow-[0_0_8px_rgba(251,191,36,0.7)]" };
+  if (l >= 350) return { label: `◈ ${l}`, color: "bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-[0_0_5px_rgba(245,158,11,0.4)]" };
+  if (l >= 200) return { label: `⚡ ${l}`, color: "bg-red-500/20 text-red-200 border border-red-400/50 shadow-[0_0_4px_rgba(239,68,68,0.35)]" };
+  if (l >= 100) return { label: `🔥 ${l}`, color: "bg-orange-500/20 text-orange-200 border border-orange-400/45" };
+  if (l >=  50) return { label: `✦ ${l}`, color: "bg-purple-500/20 text-purple-200 border border-purple-400/40" };
+  if (l >=  25) return { label: `◆ ${l}`, color: "bg-blue-500/20 text-blue-200 border border-blue-400/40" };
+  if (l >=  10) return { label: `▸ ${l}`, color: "bg-green-600/20 text-green-300 border border-green-500/30" };
+  return               { label: `Lv${l}`,  color: "bg-white/6 text-white/30 border border-white/10" };
 }
 
 function roleColor(role?: string) {
@@ -574,6 +588,11 @@ export function FloatingChat() {
                               {badge && (
                                 <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold", mine ? "bg-black/15 text-black" : badge.color)}>
                                   {badge.icon}{badge.label}
+                                </span>
+                              )}
+                              {!mine && m.level && (
+                                <span className={cn("inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold", levelBadge(m.level).color)}>
+                                  {levelBadge(m.level).label}
                                 </span>
                               )}
                               <span className={cn("text-[10px] ml-auto", mine ? "text-black/60" : "text-white/40")}>

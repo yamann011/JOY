@@ -119,6 +119,7 @@ function createSqliteDb(): Database.Database {
       role TEXT NOT NULL DEFAULT 'USER',
       avatar TEXT,
       level INTEGER NOT NULL DEFAULT 1,
+      xp INTEGER NOT NULL DEFAULT 0,
       isOnline INTEGER NOT NULL DEFAULT 0,
       isBanned INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT DEFAULT (datetime('now'))
@@ -267,7 +268,15 @@ function createSqliteDb(): Database.Database {
     );
   `);
 
+  // Mevcut DB'ye xp kolonu ekle (migration — zaten varsa hata vermez)
+  try { db.exec("ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0"); } catch {}
+
   return db;
+}
+
+// XP'den level hesapla (max 500)
+export function calculateLevel(xp: number): number {
+  return Math.min(500, Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1);
 }
 
 export class SqliteStorage implements IStorage {
@@ -288,10 +297,18 @@ export class SqliteStorage implements IStorage {
   async createUser(user: any) {
     const id = genId();
     this.db.prepare(`
-      INSERT INTO users (id, username, password, displayName, role, avatar, level, isOnline, isBanned, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, user.username, user.password, user.displayName, user.role || "USER", user.avatar ?? null, user.level ?? 1, 1, 0, now());
+      INSERT INTO users (id, username, password, displayName, role, avatar, level, xp, isOnline, isBanned, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, user.username, user.password, user.displayName, user.role || "USER", user.avatar ?? null, user.level ?? 1, 0, 1, 0, now());
     return mapUser(this.db.prepare("SELECT * FROM users WHERE id = ?").get(id))!;
+  }
+
+  async addUserXP(userId: string, amount: number): Promise<{ xp: number; level: number }> {
+    const row: any = this.db.prepare("SELECT xp FROM users WHERE id = ?").get(userId);
+    const newXp = ((row?.xp) || 0) + amount;
+    const newLevel = calculateLevel(newXp);
+    this.db.prepare("UPDATE users SET xp = ?, level = ? WHERE id = ?").run(newXp, newLevel, userId);
+    return { xp: newXp, level: newLevel };
   }
 
   async getAllUsers() {
