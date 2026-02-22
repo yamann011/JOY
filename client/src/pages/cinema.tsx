@@ -73,9 +73,7 @@ function toEmbedUrl(url: string, startTime = 0, _autoplay = false): string {
   const ytId = extractYouTubeId(url);
   if (ytId) {
     const start = Math.floor(startTime);
-    // Her zaman mute=1&autoplay=1 — tarayıcı sessiz autoplay'e izin verir
-    // Ses onLoad sonrası postMessage ile açılır
-    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&start=${start}&autoplay=1&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=0&start=${start}&autoplay=1&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
   }
   return url;
 }
@@ -205,7 +203,10 @@ export default function CinemaPage() {
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
   const [videoState, setVideoState] = useState<VideoState | null>(null);
   const [needsClickToPlay, setNeedsClickToPlay] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [seekSliderVal, setSeekSliderVal] = useState(0);
+  const seekDraggingRef = useRef(false);
   const [messages, setMessages] = useState<CinemaMsg[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [participants, setParticipants] = useState<{ username: string; displayName: string; role: string }[]>([]);
@@ -461,14 +462,16 @@ export default function CinemaPage() {
           }
         }
 
-        // infoDelivery — owner seek tespiti + localTimeRef güncelle
-        if (d.event === "infoDelivery" && d.info?.currentTime !== undefined) {
-          const ct = Number(d.info.currentTime);
-          const diff = Math.abs(ct - localTimeRef.current);
-          if (diff > 3 && videoStateRef.current?.createdByUserId === myUserIdRef.current) {
-            socketRef.current?.emit("cinema:seek", { currentTime: ct });
+        // infoDelivery — localTimeRef + seek slider + duration güncelle
+        if (d.event === "infoDelivery") {
+          if (d.info?.currentTime !== undefined) {
+            const ct = Number(d.info.currentTime);
+            localTimeRef.current = ct;
+            if (!seekDraggingRef.current) setSeekSliderVal(ct);
           }
-          localTimeRef.current = ct;
+          if (d.info?.duration !== undefined && d.info.duration > 0) {
+            setVideoDuration(Number(d.info.duration));
+          }
         }
       } catch { /* yok */ }
     };
@@ -518,18 +521,26 @@ export default function CinemaPage() {
   const handlePlay = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:play", { currentTime: time });
-    if (!videoRef.current) {
-      const iframe = iframeRef.current;
-      if (iframe) {
-        ytCommand(iframe, "seekTo", [Math.floor(time), true]);
-        setTimeout(() => ytCommand(iframe, "playVideo"), 100);
-      }
-    }
+    const iframe = iframeRef.current;
+    if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 100);
   };
   const handlePause = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:pause", { currentTime: time });
     if (!videoRef.current) ytCommand(iframeRef.current!, "pauseVideo");
+  };
+
+  const handleSeek = (newTime: number) => {
+    localTimeRef.current = newTime;
+    setSeekSliderVal(newTime);
+    socketRef.current?.emit("cinema:seek", { currentTime: newTime });
+    const iframe = iframeRef.current;
+    if (iframe) {
+      ytCommand(iframe, "seekTo", [Math.floor(newTime), true]);
+      if (videoState?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 200);
+    }
+    const videoEl = videoRef.current;
+    if (videoEl) videoEl.currentTime = newTime;
   };
 
   const joinRoom = (room: CinemaRoomInfo, password = "") => {
@@ -661,44 +672,9 @@ export default function CinemaPage() {
                     className="absolute inset-0 w-full h-full"
                     allow="autoplay; fullscreen"
                     allowFullScreen
-                    onLoad={() => {
-                      const iframe = iframeRef.current;
-                      if (!iframe) return;
-                      setTimeout(() => {
-                        ytCommand(iframe, "unMute");
-                        ytCommand(iframe, "setVolume", [100]);
-                        const vs = videoStateRef.current;
-                        if (vs?.isPlaying) {
-                          const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
-                          const liveTime = Math.floor((vs.currentTime ?? 0) + elapsed);
-                          ytCommand(iframe, "seekTo", [liveTime, true]);
-                          setTimeout(() => ytCommand(iframe, "playVideo"), 200);
-                        } else {
-                          ytCommand(iframe, "seekTo", [Math.floor(vs?.currentTime ?? 0), true]);
-                          ytCommand(iframe, "pauseVideo");
-                        }
-                      }, 2000);
-                    }}
                   />
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
-                  {!showControls && (
-                    <div className="absolute inset-0 z-10" style={{ pointerEvents: "all" }} />
-                  )}
-                  {/* Ses kapalıysa küçük buton — bloklayan overlay yok */}
-                  {isMuted && videoState.isPlaying && (
-                    <button
-                      className="absolute bottom-14 right-3 z-30 bg-black/80 text-white px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 hover:bg-black/95"
-                      onClick={() => {
-                        const iframe = iframeRef.current;
-                        if (!iframe) return;
-                        ytCommand(iframe, "unMute");
-                        ytCommand(iframe, "setVolume", [100]);
-                        setIsMuted(false);
-                      }}
-                    >
-                      🔇 Sesi Aç
-                    </button>
-                  )}
+                  <div className="absolute inset-0 z-10" style={{ pointerEvents: showControls ? "none" : "all" }} />
                 </>
               ) : isDirect(videoState.videoUrl) ? (
                 <video
@@ -718,23 +694,65 @@ export default function CinemaPage() {
               )}
             </div>
             {/* Video kontrolleri */}
-            <div className="flex items-center gap-3 px-3 py-2 bg-black border-t border-yellow-500/20 shrink-0">
-              {showControls ? (
-                videoState.isPlaying ? (
-                  <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
-                    <Pause className="w-4 h-4 mr-1" /> Duraklat
-                  </Button>
-                ) : (
-                  <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
-                    <Play className="w-4 h-4 mr-1" /> Oynat
-                  </Button>
-                )
-              ) : (
-                <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın</span>
+            <div className="flex flex-col bg-black border-t border-yellow-500/20 shrink-0">
+              {/* Seek bar — sadece owner */}
+              {showControls && (
+                <div className="px-3 pt-2 pb-1">
+                  <input
+                    type="range" min={0} max={videoDuration || 100} step={1}
+                    value={seekSliderVal}
+                    onChange={e => { seekDraggingRef.current = true; setSeekSliderVal(Number(e.target.value)); }}
+                    onMouseUp={e => { seekDraggingRef.current = false; handleSeek(Number((e.target as HTMLInputElement).value)); }}
+                    onTouchEnd={e => { seekDraggingRef.current = false; handleSeek(Number((e.currentTarget as HTMLInputElement).value)); }}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                    style={{ accentColor: "#eab308" }}
+                  />
+                  <div className="flex justify-between text-[10px] text-yellow-500/40 mt-0.5">
+                    <span>{Math.floor(seekSliderVal / 60)}:{String(Math.floor(seekSliderVal % 60)).padStart(2,"0")}</span>
+                    <span>{Math.floor(videoDuration / 60)}:{String(Math.floor(videoDuration % 60)).padStart(2,"0")}</span>
+                  </div>
+                </div>
               )}
-              <span className="text-xs text-yellow-500/50 ml-auto">
-                {videoState.isPlaying ? "▶ Oynatılıyor" : "⏸ Duraklatıldı"}
-              </span>
+              <div className="flex items-center gap-3 px-3 py-2">
+                {showControls ? (
+                  videoState.isPlaying ? (
+                    <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
+                      <Pause className="w-4 h-4 mr-1" /> Duraklat
+                    </Button>
+                  ) : (
+                    <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
+                      <Play className="w-4 h-4 mr-1" /> Oynat
+                    </Button>
+                  )
+                ) : (
+                  <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın</span>
+                )}
+                {/* Ses kontrolü — herkes için */}
+                {isYouTube(videoState.videoUrl) && (
+                  <button
+                    className="ml-auto text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
+                    onClick={() => {
+                      const iframe = iframeRef.current;
+                      if (!iframe) return;
+                      if (isMuted) {
+                        ytCommand(iframe, "unMute");
+                        ytCommand(iframe, "setVolume", [100]);
+                        setIsMuted(false);
+                      } else {
+                        ytCommand(iframe, "mute");
+                        setIsMuted(true);
+                      }
+                    }}
+                  >
+                    {isMuted ? "🔇 Sesi Aç" : "🔊 Sesi Kapat"}
+                  </button>
+                )}
+                {!showControls && (
+                  <span className="text-xs text-yellow-500/50 ml-2">
+                    {videoState.isPlaying ? "▶ Oynatılıyor" : "⏸ Duraklatıldı"}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
