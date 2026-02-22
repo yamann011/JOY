@@ -203,10 +203,13 @@ export default function CinemaPage() {
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
   const [videoState, setVideoState] = useState<VideoState | null>(null);
   const [needsClickToPlay, setNeedsClickToPlay] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(100);
+  const volumeRef = useRef(100);
   const [videoDuration, setVideoDuration] = useState(0);
   const [seekSliderVal, setSeekSliderVal] = useState(0);
   const seekDraggingRef = useRef(false);
+  const pendingSeekRef = useRef<number | null>(null);
   const [messages, setMessages] = useState<CinemaMsg[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [participants, setParticipants] = useState<{ username: string; displayName: string; role: string }[]>([]);
@@ -293,15 +296,14 @@ export default function CinemaPage() {
 
     socket.on("cinema:state", (state: VideoState) => {
       stateReceivedAtRef.current = Date.now();
-      playerReadyRef.current = false;
-      // Mevcut durumu syncWasPlayingRef'e yaz — ilk heartbeat'te yanlış reload olmasın
       syncWasPlayingRef.current = state.isPlaying;
       lastReloadTimeRef.current = Date.now();
       setNeedsClickToPlay(false);
+      const prevUrl = videoStateRef.current?.videoUrl;
       videoStateRef.current = state;
       localTimeRef.current = state.currentTime;
+      pendingSeekRef.current = state.currentTime;
       setVideoState(state);
-      setIframeKey(k => k + 1);
       setCurrentRoom(prev => {
         if (prev) return { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
         const pending = pendingRejoinRef.current;
@@ -309,9 +311,25 @@ export default function CinemaPage() {
         if (pending) return { ...pending, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
         return prev;
       });
-      setIframeSrc(toEmbedUrl(state.videoUrl,
-        state.isPlaying ? Math.floor(state.currentTime) + 5 : Math.floor(state.currentTime)
-      ));
+      const urlChanged = !prevUrl || prevUrl !== state.videoUrl;
+      if (urlChanged) {
+        // URL değişti veya ilk yükleme → iframe sıfırla
+        playerReadyRef.current = false;
+        setIframeKey(k => k + 1);
+        setIframeSrc(toEmbedUrl(state.videoUrl,
+          state.isPlaying ? Math.floor(state.currentTime) + 3 : Math.floor(state.currentTime)
+        ));
+      } else {
+        // Aynı URL — sadece postMessage ile sync (iframe yeniden yüklenmesin)
+        const iframe = iframeRef.current;
+        if (iframe && playerReadyRef.current) {
+          const elapsed = state.isPlaying ? (Date.now() - stateReceivedAtRef.current) / 1000 : 0;
+          const target = Math.floor(state.currentTime + elapsed);
+          ytCommand(iframe, "seekTo", [target, true]);
+          if (state.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+          else ytCommand(iframe, "pauseVideo");
+        }
+      }
     });
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
@@ -345,14 +363,14 @@ export default function CinemaPage() {
             lastReloadTimeRef.current = Date.now();
             setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
           } else if (!isPlaying) {
-            // Duraklat → postMessage
-            if (iframe && playerReadyRef.current) ytCommand(iframe, "pauseVideo");
+            // Duraklat — her zaman gönder
+            if (iframe) ytCommand(iframe, "pauseVideo");
           } else {
-            // Oynat → postMessage (reload yok, kesintisiz)
-            if (iframe && playerReadyRef.current) {
+            // Oynat — her zaman gönder
+            if (iframe) {
               ytCommand(iframe, "playVideo");
             } else if (!playerReadyRef.current) {
-              // Player henüz yüklenmemiş → reload gerekiyor (sadece ilk kez)
+              // Iframe henüz yok → reload
               const sinceLastReload = Date.now() - lastReloadTimeRef.current;
               if (sinceLastReload > 5000) {
                 playerReadyRef.current = false;
@@ -418,20 +436,26 @@ export default function CinemaPage() {
       try {
         const d = JSON.parse(e.data);
 
-        // YouTube player hazır → sessiz autoplay başladı
+        // YouTube player hazır → unmute + doğru pozisyona seek
         if (d.event === "onReady" || d.info === "ytPlayer") {
           playerReadyRef.current = true;
           setNeedsClickToPlay(false);
           const iframe = iframeRef.current;
           if (!iframe) return;
           const vs = videoStateRef.current;
-          if (vs?.isPlaying) {
-            // Mobilde unMute postMessage videoyu durdurabiliyor.
-            // Video zaten mute=1 ile başladı → "Sesi Aç" butonu göster, kullanıcı bassın
-            setIsMuted(true);
-          } else {
-            ytCommand(iframe, "pauseVideo");
-          }
+          // Sesi aç — user sayfayla etkileşime girdi (oda katılma butonu)
+          ytCommand(iframe, "unMute");
+          ytCommand(iframe, "setVolume", [volumeRef.current]);
+          setIsMuted(false);
+          // Doğru zamana git
+          const seekTarget = pendingSeekRef.current ?? vs?.currentTime ?? 0;
+          const elapsed = vs?.isPlaying ? (Date.now() - stateReceivedAtRef.current) / 1000 : 0;
+          const target = Math.floor(seekTarget + elapsed);
+          ytCommand(iframe, "seekTo", [target, true]);
+          setTimeout(() => {
+            if (vs?.isPlaying) ytCommand(iframe, "playVideo");
+            else ytCommand(iframe, "pauseVideo");
+          }, 300);
         }
 
         // YouTube oynat/duraklat durumu değişti
@@ -729,23 +753,40 @@ export default function CinemaPage() {
                 )}
                 {/* Ses kontrolü — herkes için */}
                 {isYouTube(videoState.videoUrl) && (
-                  <button
-                    className="ml-auto text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
-                    onClick={() => {
-                      const iframe = iframeRef.current;
-                      if (!iframe) return;
-                      if (isMuted) {
-                        ytCommand(iframe, "unMute");
-                        ytCommand(iframe, "setVolume", [100]);
-                        setIsMuted(false);
-                      } else {
-                        ytCommand(iframe, "mute");
-                        setIsMuted(true);
-                      }
-                    }}
-                  >
-                    {isMuted ? "🔇 Sesi Aç" : "🔊 Sesi Kapat"}
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-2 py-1 rounded-full transition-colors"
+                      onClick={() => {
+                        const iframe = iframeRef.current;
+                        if (!iframe) return;
+                        if (isMuted) {
+                          ytCommand(iframe, "unMute");
+                          ytCommand(iframe, "setVolume", [volumeRef.current]);
+                          setIsMuted(false);
+                        } else {
+                          ytCommand(iframe, "mute");
+                          setIsMuted(true);
+                        }
+                      }}
+                    >
+                      {isMuted ? "🔇" : "🔊"}
+                    </button>
+                    <input
+                      type="range" min={0} max={100} step={1}
+                      value={isMuted ? 0 : volume}
+                      onChange={e => {
+                        const v = Number(e.target.value);
+                        setVolume(v);
+                        volumeRef.current = v;
+                        const iframe = iframeRef.current;
+                        if (!iframe) return;
+                        if (v === 0) { ytCommand(iframe, "mute"); setIsMuted(true); }
+                        else { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [v]); setIsMuted(false); }
+                      }}
+                      className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
+                      style={{ accentColor: "#eab308" }}
+                    />
+                  </div>
                 )}
                 {!showControls && (
                   <span className="text-xs text-yellow-500/50 ml-2">
