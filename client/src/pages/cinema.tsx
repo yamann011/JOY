@@ -288,11 +288,10 @@ export default function CinemaPage() {
     socket.on("cinema:state", (state: VideoState) => {
       stateReceivedAtRef.current = Date.now();
       playerReadyRef.current = false;
-      // needsClickToPlay sadece auto-rejoin'de set edilir, burada sıfırlamıyoruz
       videoStateRef.current = state;
       localTimeRef.current = state.currentTime;
       setVideoState(state);
-      setIframeKey(k => k + 1); // iframe'i zorla yeniden yükle
+      setIframeKey(k => k + 1);
       setCurrentRoom(prev => {
         if (prev) return { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
         const pending = pendingRejoinRef.current;
@@ -300,7 +299,11 @@ export default function CinemaPage() {
         if (pending) return { ...pending, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
         return prev;
       });
-      setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime)));
+      // start = currentTime + 5 (yükleme süresi tahmini) → seek'e gerek kalmaz → mobil uyumlu
+      const startTime = state.isPlaying
+        ? Math.floor(state.currentTime) + 5
+        : Math.floor(state.currentTime);
+      setIframeSrc(toEmbedUrl(state.videoUrl, startTime));
     });
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
@@ -373,7 +376,7 @@ export default function CinemaPage() {
       try {
         const d = JSON.parse(e.data);
 
-        // YouTube player hazır → canlı pozisyona seek + sessiz otomatik oynat
+        // YouTube player hazır
         if (d.event === "onReady" || d.info === "ytPlayer") {
           playerReadyRef.current = true;
           needsClickToPlayRef.current = false;
@@ -381,21 +384,13 @@ export default function CinemaPage() {
           const iframe = iframeRef.current;
           if (!iframe) return;
           const vs = videoStateRef.current;
-          const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
-          const liveTime = Math.floor((vs?.currentTime ?? 0) + elapsed);
-          // Sessiz başlat → seek → oynat (tarayıcı izin verir)
-          ytCommand(iframe, "mute");
-          ytCommand(iframe, "seekTo", [liveTime, true]);
           if (vs?.isPlaying) {
-            setTimeout(() => {
-              ytCommand(iframe, "playVideo");
-              // Sesi açmayı dene
-              setTimeout(() => {
-                ytCommand(iframe, "unMute");
-                ytCommand(iframe, "setVolume", [100]);
-                setIsMuted(false);
-              }, 400);
-            }, 200);
+            // Video zaten start=X+5 ile autoplay başladı — sadece sesi aç
+            // Birden fazla deneme: mobil bazen ilkinde yanıt vermez
+            ytCommand(iframe, "unMute");
+            ytCommand(iframe, "setVolume", [100]);
+            setTimeout(() => { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [100]); }, 500);
+            setTimeout(() => { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [100]); }, 1200);
           } else {
             ytCommand(iframe, "pauseVideo");
           }
@@ -406,9 +401,12 @@ export default function CinemaPage() {
           const ytState = Number(d.info);
           const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
           if (ytState === 1) {
-            // Oynatılıyor
+            // Oynatılıyor — sesi aç
             setNeedsClickToPlay(false);
             needsClickToPlayRef.current = false;
+            setIsMuted(false);
+            const iframe = iframeRef.current;
+            if (iframe) { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [100]); }
             if (isOwner && !videoStateRef.current?.isPlaying) {
               socketRef.current?.emit("cinema:play", { currentTime: localTimeRef.current });
             }
@@ -417,14 +415,21 @@ export default function CinemaPage() {
             if (isOwner && videoStateRef.current?.isPlaying) {
               socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
             } else if (!isOwner && videoStateRef.current?.isPlaying && playerReadyRef.current) {
-              // İzleyici: owner durdurmadıysa otomatik devam ettir
+              // Owner durdurmadıysa → tekrar oynat (yükleme gecikmesi olabilir)
               const iframe = iframeRef.current;
-              if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 300);
+              if (iframe) {
+                setTimeout(() => ytCommand(iframe, "playVideo"), 400);
+                setTimeout(() => ytCommand(iframe, "playVideo"), 1000);
+              }
             }
           } else if (ytState === -1 || ytState === 5) {
+            // Başlamamış → oynatmayı zorla
             if (videoStateRef.current?.isPlaying) {
               const iframe = iframeRef.current;
-              if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 500);
+              if (iframe) {
+                setTimeout(() => ytCommand(iframe, "playVideo"), 500);
+                setTimeout(() => ytCommand(iframe, "playVideo"), 1500);
+              }
             }
           }
         }
@@ -635,24 +640,18 @@ export default function CinemaPage() {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                     onLoad={() => {
+                      // onReady zaten halleder — bu sadece onReady gelmezse fallback
+                      if (playerReadyRef.current) return;
                       const iframe = iframeRef.current;
-                      if (!iframe || playerReadyRef.current) return; // onReady zaten hallettiyse atla
-                      setTimeout(() => {
-                        const vs = videoStateRef.current;
-                        const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
-                        const liveTime = Math.floor((vs?.currentTime ?? 0) + elapsed);
-                        ytCommand(iframe, "mute");
-                        ytCommand(iframe, "seekTo", [liveTime, true]);
-                        if (vs?.isPlaying) {
+                      if (!iframe) return;
+                      const vs = videoStateRef.current;
+                      if (vs?.isPlaying) {
+                        [1500, 2500, 3500].forEach(d => setTimeout(() => {
                           ytCommand(iframe, "playVideo");
-                          setTimeout(() => {
-                            ytCommand(iframe, "unMute");
-                            ytCommand(iframe, "setVolume", [100]);
-                          }, 500);
-                        } else {
-                          ytCommand(iframe, "pauseVideo");
-                        }
-                      }, 2000);
+                          ytCommand(iframe, "unMute");
+                          ytCommand(iframe, "setVolume", [100]);
+                        }, d));
+                      }
                     }}
                   />
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
