@@ -325,7 +325,6 @@ export default function CinemaPage() {
         setIframeKey(k => k + 1);
         // start= state alındığı andaki pozisyon; onReady gerçek elapsed ile seek yapar
         iframeSrcSetAtRef.current = Date.now();
-        setIsMuted(true);
         setIframeSrc(toEmbedUrl(state.videoUrl,
           Math.max(0, Math.floor(state.currentTime)),
           state.isPlaying
@@ -369,24 +368,27 @@ export default function CinemaPage() {
           const timeDiff = Math.abs(localTimeRef.current - currentTime);
 
           if (isSeeked && iframe && playerReadyRef.current) {
-            // Owner seek yaptı → timeDiff'e bakmadan anında seekTo
+            // Owner seek yaptı → timeDiff'e bakmadan anında seekTo, ses koru
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
+            ytCommand(iframe, "unMute");
+            ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
             if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
             else ytCommand(iframe, "pauseVideo");
           } else if (isSeeked || timeDiff > 8) {
-            // Seek farkı büyük → iframe reload (doğru pozisyondan başlat)
+            // Seek farkı çok büyük → iframe reload
             playerReadyRef.current = false;
             lastReloadTimeRef.current = Date.now();
-            setIsMuted(true);
             setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
-          } else if (timeDiff > 1.5 && iframe && playerReadyRef.current) {
-            // Seek farkı orta → seekTo ile anında konuma git
+          } else if (timeDiff > 0.5 && iframe && playerReadyRef.current) {
+            // Drift düzelt → seekTo, ses koru
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
-            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+            ytCommand(iframe, "unMute");
+            ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
+            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
             else ytCommand(iframe, "pauseVideo");
           } else if (!isPlaying) {
             // Duraklat — her zaman gönder
@@ -401,7 +403,6 @@ export default function CinemaPage() {
               if (sinceLastReload > 5000) {
                 playerReadyRef.current = false;
                 lastReloadTimeRef.current = Date.now();
-                setIsMuted(true);
                 setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
               }
             }
@@ -483,6 +484,8 @@ export default function CinemaPage() {
           seekingByUsRef.current = true;
           setTimeout(() => { seekingByUsRef.current = false; }, 2000);
           ytCommand(iframe, "seekTo", [target, true]);
+          ytCommand(iframe, "unMute");
+          ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
           // YouTube'dan süre bilgisi iste — gelmeyene kadar polling ile tekrar iste
           if (durationPollRef.current) clearInterval(durationPollRef.current);
           videoDurationRef.current = 0;
