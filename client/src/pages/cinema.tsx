@@ -190,6 +190,7 @@ export default function CinemaPage() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const [iframeSrc, setIframeSrc] = useState("");
+  const [needsPlay, setNeedsPlay] = useState(false); // autoplay engellenince "Devam Et" göster
 
   const [rooms, setRooms] = useState<CinemaRoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
@@ -278,8 +279,10 @@ export default function CinemaPage() {
       videoStateRef.current = state;
       setVideoState(state);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying } : prev);
-      // iframe src'i React state ile set et — doğru zamandan autoplay
       setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime), state.isPlaying));
+      // Video oynatılıyorsa kullanıcı etkileşimi gerekebilir (autoplay politikası)
+      if (state.isPlaying) setNeedsPlay(true);
+      else setNeedsPlay(false);
     });
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
@@ -320,26 +323,46 @@ export default function CinemaPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // syncIframe — ref pattern ile stale closure yok, her render'da güncellenir
+  // syncIframe — sadece postMessage, iframe reload yok → sıfır gecikme
   const syncIframeFnRef = useRef<(playing: boolean, time: number) => void>();
   syncIframeFnRef.current = (playing: boolean, time: number) => {
     const videoEl = videoRef.current;
-    const vs = videoStateRef.current;
+    const iframe = iframeRef.current;
     if (videoEl) {
       if (Math.abs(videoEl.currentTime - time) > 1.5) videoEl.currentTime = time;
       if (playing && videoEl.paused) videoEl.play().catch(() => {});
       else if (!playing && !videoEl.paused) videoEl.pause();
       return;
     }
-    if (!vs) return;
+    if (!iframe) return;
     if (playing) {
-      // React state ile src güncelle — iframe doğru zamandan autoplay ile başlar
-      setIframeSrc(toEmbedUrl(vs.videoUrl, Math.floor(time), true));
+      ytCommand(iframe, "seekTo", [Math.floor(time), true]);
+      setTimeout(() => ytCommand(iframe, "playVideo"), 100);
     } else {
-      // Sadece postMessage ile duraklat — iframe reload yok
-      ytCommand(iframeRef.current!, "pauseVideo");
+      ytCommand(iframe, "pauseVideo");
     }
   };
+
+  // YouTube postMessage dinle — owner seek'ini tespit et, localTimeRef güncelle
+  useEffect(() => {
+    const handleYTMsg = (e: MessageEvent) => {
+      if (!e.data || typeof e.data !== "string") return;
+      try {
+        const d = JSON.parse(e.data);
+        if (d.event === "infoDelivery" && d.info?.currentTime !== undefined) {
+          const ct = Number(d.info.currentTime);
+          const diff = Math.abs(ct - localTimeRef.current);
+          // Eğer owner ve zaman 3sn'den fazla atladıysa → seek yaptı, herkesi sync et
+          if (diff > 3 && videoStateRef.current?.createdByUserId === myUserIdRef.current) {
+            socketRef.current?.emit("cinema:seek", { currentTime: ct });
+          }
+          localTimeRef.current = ct;
+        }
+      } catch { /* yok */ }
+    };
+    window.addEventListener("message", handleYTMsg);
+    return () => window.removeEventListener("message", handleYTMsg);
+  }, []);
 
   // Heartbeat: oda sahibiyse her 5sn'de currentTime gönder
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -383,19 +406,20 @@ export default function CinemaPage() {
   const handlePlay = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:play", { currentTime: time });
-    // Owner kendi iframe'ini de başlatır (sync event owner'ı atlıyor)
-    const vs = videoStateRef.current;
-    if (vs && !videoRef.current) {
-      setIframeSrc(toEmbedUrl(vs.videoUrl, Math.floor(time), true));
+    setNeedsPlay(false);
+    // Owner kendi iframesine de playVideo gönder
+    if (!videoRef.current) {
+      const iframe = iframeRef.current;
+      if (iframe) {
+        ytCommand(iframe, "seekTo", [Math.floor(time), true]);
+        setTimeout(() => ytCommand(iframe, "playVideo"), 100);
+      }
     }
   };
   const handlePause = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:pause", { currentTime: time });
-    // Owner kendi iframe'ini de duraklat
-    if (!videoRef.current) {
-      ytCommand(iframeRef.current!, "pauseVideo");
-    }
+    if (!videoRef.current) ytCommand(iframeRef.current!, "pauseVideo");
   };
 
   const joinRoom = (room: CinemaRoomInfo, password = "") => {
@@ -411,6 +435,8 @@ export default function CinemaPage() {
     setCurrentRoom(null);
     setVideoState(null);
     setMessages([]);
+    setNeedsPlay(false);
+    setIframeSrc("");
     try { localStorage.removeItem("cinema_last_room"); } catch {}
   };
 
@@ -515,6 +541,29 @@ export default function CinemaPage() {
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
                   {!showControls && (
                     <div className="absolute inset-0 z-10" style={{ pointerEvents: "all" }} />
+                  )}
+                  {/* Autoplay engellenince "Devam Et" overlay — tüm kullanıcılara */}
+                  {videoState.isPlaying && needsPlay && (
+                    <div
+                      className="absolute inset-0 z-20 flex items-center justify-center bg-black/75 cursor-pointer"
+                      onClick={() => {
+                        const iframe = iframeRef.current;
+                        const t = Math.floor(localTimeRef.current);
+                        if (iframe) {
+                          ytCommand(iframe, "seekTo", [t, true]);
+                          setTimeout(() => ytCommand(iframe, "playVideo"), 100);
+                        }
+                        setNeedsPlay(false);
+                      }}
+                    >
+                      <div className="flex flex-col items-center gap-3 select-none">
+                        <div className="w-20 h-20 rounded-full bg-yellow-500/20 border-2 border-yellow-400 flex items-center justify-center">
+                          <Play className="w-10 h-10 text-yellow-400 ml-1" />
+                        </div>
+                        <span className="text-white text-base font-bold">Yayına Devam Et</span>
+                        <span className="text-yellow-400/60 text-xs">Tıkla ve izle</span>
+                      </div>
+                    </div>
                   )}
                 </>
               ) : isDirect(videoState.videoUrl) ? (
