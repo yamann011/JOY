@@ -189,6 +189,8 @@ export default function CinemaPage() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
+  const [iframeSrc, setIframeSrc] = useState("");
+
   const [rooms, setRooms] = useState<CinemaRoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
   const [videoState, setVideoState] = useState<VideoState | null>(null);
@@ -277,10 +279,8 @@ export default function CinemaPage() {
       videoStateRef.current = state;
       setVideoState(state);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying } : prev);
-      // Odaya katılırken video oynatılıyorsa doğru zamandan başlat
-      if (state.isPlaying) {
-        setTimeout(() => syncIframeFnRef.current?.(state.isPlaying, state.currentTime), 800);
-      }
+      // iframe src'i React state ile set et — doğru zamandan autoplay
+      setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime), state.isPlaying));
     });
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
@@ -301,6 +301,7 @@ export default function CinemaPage() {
     socket.on("cinema:url_changed", ({ videoUrl, by }: { videoUrl: string; by: string }) => {
       setVideoState(prev => prev ? { ...prev, videoUrl, currentTime: 0, isPlaying: false } : prev);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl } : prev);
+      setIframeSrc(toEmbedUrl(videoUrl, 0, false));
       toast({ title: `${by} videoyu değiştirdi` });
     });
 
@@ -323,7 +324,6 @@ export default function CinemaPage() {
   // syncIframe — ref pattern ile stale closure yok, her render'da güncellenir
   const syncIframeFnRef = useRef<(playing: boolean, time: number) => void>();
   syncIframeFnRef.current = (playing: boolean, time: number) => {
-    const iframe = iframeRef.current;
     const videoEl = videoRef.current;
     const vs = videoStateRef.current;
     if (videoEl) {
@@ -332,13 +332,13 @@ export default function CinemaPage() {
       else if (!playing && !videoEl.paused) videoEl.pause();
       return;
     }
-    if (!iframe || !vs) return;
+    if (!vs) return;
     if (playing) {
-      // iframe src'i doğru zaman + autoplay=1 ile yenile — en güvenilir sync yöntemi
-      const newSrc = toEmbedUrl(vs.videoUrl, Math.floor(time), true);
-      iframe.src = newSrc;
+      // React state ile src güncelle — iframe doğru zamandan autoplay ile başlar
+      setIframeSrc(toEmbedUrl(vs.videoUrl, Math.floor(time), true));
     } else {
-      ytCommand(iframe, "pauseVideo");
+      // Sadece postMessage ile duraklat — iframe reload yok
+      ytCommand(iframeRef.current!, "pauseVideo");
     }
   };
 
@@ -384,10 +384,19 @@ export default function CinemaPage() {
   const handlePlay = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:play", { currentTime: time });
+    // Owner kendi iframe'ini de başlatır (sync event owner'ı atlıyor)
+    const vs = videoStateRef.current;
+    if (vs && !videoRef.current) {
+      setIframeSrc(toEmbedUrl(vs.videoUrl, Math.floor(time), true));
+    }
   };
   const handlePause = () => {
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:pause", { currentTime: time });
+    // Owner kendi iframe'ini de duraklat
+    if (!videoRef.current) {
+      ytCommand(iframeRef.current!, "pauseVideo");
+    }
   };
 
   const joinRoom = (room: CinemaRoomInfo, password = "") => {
@@ -466,7 +475,6 @@ export default function CinemaPage() {
 
   // ─── ROOM VIEW ────────────────────────────────────────────────────────────
   if (currentRoom && videoState) {
-    const embedUrl = toEmbedUrl(videoState.videoUrl);
     const isOwner = String((user as any)?.id) === videoState.createdByUserId;
     const showControls = canControlVideo(videoState);
     return (
@@ -499,7 +507,7 @@ export default function CinemaPage() {
               {isYouTube(videoState.videoUrl) ? (
                 <iframe
                   ref={iframeRef}
-                  src={`${embedUrl}&autoplay=0`}
+                  src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0, false)}
                   className="absolute inset-0 w-full h-full"
                   allow="autoplay; fullscreen"
                   allowFullScreen
@@ -514,7 +522,7 @@ export default function CinemaPage() {
               ) : (
                 <iframe
                   ref={iframeRef}
-                  src={embedUrl}
+                  src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0, false)}
                   className="absolute inset-0 w-full h-full"
                   allow="autoplay; fullscreen"
                   allowFullScreen

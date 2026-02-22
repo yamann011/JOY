@@ -868,13 +868,21 @@ cinemaIO.on("connection", (socket) => {
       const room = cinemaRooms.get(currentRoomId);
       if (room) {
         room.participants.delete(socket.id);
+        const participantList = Array.from(room.participants.values());
         cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:participant_update", {
           count: room.participants.size,
-          participants: Array.from(room.participants.values()),
+          participants: participantList,
         });
-        // Oda boşalınca sadece katılımcı sayısı güncellenir, oda silinmez (kalıcı oda)
-        if (room.participants.size === 0) {
-          cinemaIO.emit("cinema:room_updated", { roomId: currentRoomId, participantCount: 0 });
+        cinemaIO.emit("cinema:room_participants", {
+          roomId: currentRoomId,
+          participants: participantList,
+          count: room.participants.size,
+        });
+        // Oda boşalınca videoyu duraklat ve zamanı kaydet
+        if (room.participants.size === 0 && room.isPlaying) {
+          room.currentTime = calcCurrentTime(room);
+          room.lastSyncAt = Date.now();
+          room.isPlaying = false;
         }
       }
     }
