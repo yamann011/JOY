@@ -39,6 +39,8 @@ interface CinemaRoomInfo {
   createdBy: string;
   createdByUserId: string;
   createdAt: number;
+  roomImage?: string;
+  animatedRoom?: boolean;
 }
 
 interface CinemaMsg {
@@ -204,6 +206,8 @@ export default function CinemaPage() {
   const [createName, setCreateName] = useState("");
   const [createUrl, setCreateUrl] = useState("");
   const [createPass, setCreatePass] = useState("");
+  const [createRoomImage, setCreateRoomImage] = useState("");
+  const [createAnimatedRoom, setCreateAnimatedRoom] = useState(false);
   const [joinPass, setJoinPass] = useState("");
   const [showChangeUrl, setShowChangeUrl] = useState(false);
   const [newUrl, setNewUrl] = useState("");
@@ -477,6 +481,8 @@ export default function CinemaPage() {
       name: createName.trim(),
       videoUrl: createUrl.trim(),
       password: createPass || undefined,
+      roomImage: createRoomImage.trim() || undefined,
+      animatedRoom: createAnimatedRoom,
     });
   };
 
@@ -753,10 +759,35 @@ export default function CinemaPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {rooms.map(room => (
-              <Card key={room.id} className="bg-[#111] border-yellow-500/20 hover:border-yellow-500/50 transition-all hover:shadow-lg hover:shadow-yellow-500/5">
+              <Card
+                key={room.id}
+                className={`bg-[#111] border-yellow-500/20 hover:border-yellow-500/50 transition-all hover:shadow-lg hover:shadow-yellow-500/5 overflow-hidden ${room.animatedRoom ? "animated-cinema-card" : ""}`}
+                style={room.animatedRoom ? { borderColor: "transparent" } : {}}
+              >
+                {room.animatedRoom && (
+                  <style>{`
+                    @keyframes cinemaCardBorder {
+                      0%,100% { box-shadow: 0 0 0 2px #a855f7, 0 0 16px 4px rgba(168,85,247,0.4); }
+                      33%  { box-shadow: 0 0 0 2px #ec4899, 0 0 20px 6px rgba(236,72,153,0.4); }
+                      66%  { box-shadow: 0 0 0 2px #6366f1, 0 0 18px 5px rgba(99,102,241,0.4); }
+                    }
+                    .animated-cinema-card { animation: cinemaCardBorder 3s ease-in-out infinite; border-radius: 0.75rem; }
+                  `}</style>
+                )}
+                {room.roomImage && (
+                  <div className="relative h-28 overflow-hidden">
+                    <img
+                      src={room.roomImage}
+                      alt={room.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#111]" />
+                  </div>
+                )}
                 <CardHeader className="pb-2">
                   <CardTitle className="text-yellow-100 flex items-center gap-2 text-base">
                     {room.hasPassword && <Lock className="w-4 h-4 text-yellow-400 shrink-0" />}
+                    {room.animatedRoom && <span className="text-purple-400">✨</span>}
                     <span className="truncate">{room.name}</span>
                   </CardTitle>
                   <p className="text-yellow-500/40 text-xs">{room.createdBy} tarafından</p>
@@ -813,10 +844,32 @@ export default function CinemaPage() {
           <div className="space-y-3">
             <Input value={createName} onChange={e => setCreateName(e.target.value)} placeholder="Oda adı (örn: Film Gecesi)"
               className="bg-white/5 border-yellow-500/20 text-white placeholder:text-white/30" />
-            <Input value={createUrl} onChange={e => setCreateUrl(e.target.value)} placeholder="Video URL (YouTube, direkt link...)"
+            <Input value={createUrl} onChange={e => setCreateUrl(e.target.value)} placeholder="YouTube linki"
               className="bg-white/5 border-yellow-500/20 text-white placeholder:text-white/30" />
             <Input value={createPass} onChange={e => setCreatePass(e.target.value)} placeholder="Şifre (opsiyonel)" type="password"
               className="bg-white/5 border-yellow-500/20 text-white placeholder:text-white/30" />
+            {/* Animasyonlu Oda — sadece animatedCinema yetkisi olanlara göster */}
+            {!!(user as any)?.specialPerms?.animatedCinema &&
+              (!((user as any)?.specialPerms?.expiresAt) || new Date((user as any).specialPerms.expiresAt) > new Date()) && (
+              <div className="space-y-2 border border-purple-500/30 rounded-lg p-3 bg-purple-500/5">
+                <p className="text-xs text-purple-400 font-semibold">✨ Özel Oda Ayarları</p>
+                <Input
+                  value={createRoomImage}
+                  onChange={e => setCreateRoomImage(e.target.value)}
+                  placeholder="Oda kapak resmi URL (GIF, PNG, JPG)"
+                  className="bg-white/5 border-purple-500/20 text-white placeholder:text-white/30"
+                />
+                <label className="flex items-center gap-2 text-sm text-purple-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={createAnimatedRoom}
+                    onChange={e => setCreateAnimatedRoom(e.target.checked)}
+                    className="accent-purple-500"
+                  />
+                  Animasyonlu oda çerçevesi aktif
+                </label>
+              </div>
+            )}
             <Button onClick={handleCreate} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold w-full">
               <Plus className="w-4 h-4 mr-2" /> Oda Oluştur
             </Button>

@@ -583,7 +583,7 @@ export function FloatingChat() {
                             )}
                             <div className="flex items-center flex-wrap gap-1 mb-0.5">
                               <span className={cn("text-xs", mine ? "text-black/80" : "text-white/80")}>
-                                <AnimatedUsername username={m.displayName || m.username} role={(m.role?.toUpperCase() || "USER") as any} />
+                                <AnimatedUsername username={m.displayName || m.username} role={(m.role?.toUpperCase() || "USER") as any} specialPerms={(m as any).specialPerms} />
                               </span>
                               {badge && (
                                 <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold", mine ? "bg-black/15 text-black" : badge.color)}>

@@ -18,11 +18,16 @@ const toBool = (v: any): boolean => v === 1 || v === true || v === "true";
 
 function mapUser(r: any) {
   if (!r) return undefined;
+  let specialPerms: any = null;
+  if (r.specialPerms) {
+    try { specialPerms = JSON.parse(r.specialPerms); } catch {}
+  }
   return {
     ...r,
     isOnline: toBool(r.isOnline),
     isBanned: toBool(r.isBanned),
     createdAt: toDate(r.createdAt),
+    specialPerms,
   };
 }
 
@@ -122,6 +127,7 @@ function createSqliteDb(): Database.Database {
       xp INTEGER NOT NULL DEFAULT 0,
       isOnline INTEGER NOT NULL DEFAULT 0,
       isBanned INTEGER NOT NULL DEFAULT 0,
+      specialPerms TEXT DEFAULT NULL,
       createdAt TEXT DEFAULT (datetime('now'))
     );
 
@@ -270,6 +276,8 @@ function createSqliteDb(): Database.Database {
 
   // Mevcut DB'ye xp kolonu ekle (migration — zaten varsa hata vermez)
   try { db.exec("ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0"); } catch {}
+  // specialPerms kolonu migration
+  try { db.exec("ALTER TABLE users ADD COLUMN specialPerms TEXT DEFAULT NULL"); } catch {}
 
   return db;
 }
@@ -319,9 +327,12 @@ export class SqliteStorage implements IStorage {
     const user = this.db.prepare("SELECT * FROM users WHERE id = ?").get(id) as any;
     if (!user) return undefined;
     const merged = { ...user, ...updates };
+    const specialPermsJson = merged.specialPerms !== undefined
+      ? (merged.specialPerms === null ? null : JSON.stringify(merged.specialPerms))
+      : user.specialPerms;
     this.db.prepare(`
-      UPDATE users SET username=?, password=?, displayName=?, role=?, avatar=?, level=?, isOnline=?, isBanned=? WHERE id=?
-    `).run(merged.username, merged.password, merged.displayName, merged.role, merged.avatar ?? null, merged.level, merged.isOnline ? 1 : 0, merged.isBanned ? 1 : 0, id);
+      UPDATE users SET username=?, password=?, displayName=?, role=?, avatar=?, level=?, isOnline=?, isBanned=?, specialPerms=? WHERE id=?
+    `).run(merged.username, merged.password, merged.displayName, merged.role, merged.avatar ?? null, merged.level, merged.isOnline ? 1 : 0, merged.isBanned ? 1 : 0, specialPermsJson, id);
     return mapUser(this.db.prepare("SELECT * FROM users WHERE id = ?").get(id));
   }
 

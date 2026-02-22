@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { RoleBadge } from "@/components/role-badge";
+import { AnimatedUsername } from "@/components/animated-username";
 import type { UserRoleType, Banner, User as UserType } from "@shared/schema";
 import { Calendar, MessageSquare, Crown, Ticket, Film, Users, Trophy, Star, TrendingUp, Activity, Newspaper, Eye, Heart } from "lucide-react";
 import { Link, Redirect } from "wouter";
@@ -45,9 +46,48 @@ function FeaturedMembers() {
   const member3 = getMember(featuredData?.member3 || null);
 
   const rankStyles = [
-    { bg: "bg-gradient-to-br from-yellow-400 to-yellow-600", border: "border-yellow-500", text: "text-yellow-500", label: "1." },
-    { bg: "bg-gradient-to-br from-gray-300 to-gray-500", border: "border-gray-400", text: "text-gray-400", label: "2." },
-    { bg: "bg-gradient-to-br from-amber-600 to-amber-800", border: "border-amber-700", text: "text-amber-600", label: "3." },
+    {
+      bg: "bg-gradient-to-br from-yellow-400 to-yellow-600",
+      border: "border-yellow-400",
+      text: "text-yellow-400",
+      label: "1.",
+      glow: "shadow-[0_0_18px_4px_rgba(250,204,21,0.55)]",
+      frameAnim: "top1Frame",
+      frameStyle: `
+        @keyframes top1Frame {
+          0%,100% { box-shadow: 0 0 10px 3px rgba(250,204,21,0.5), inset 0 0 8px rgba(250,204,21,0.15); border-color: #facc15; }
+          50%      { box-shadow: 0 0 22px 8px rgba(251,191,36,0.8), inset 0 0 14px rgba(251,191,36,0.25); border-color: #fbbf24; }
+        }
+      `,
+    },
+    {
+      bg: "bg-gradient-to-br from-gray-300 to-gray-500",
+      border: "border-gray-300",
+      text: "text-gray-300",
+      label: "2.",
+      glow: "shadow-[0_0_14px_3px_rgba(209,213,219,0.45)]",
+      frameAnim: "top2Frame",
+      frameStyle: `
+        @keyframes top2Frame {
+          0%,100% { box-shadow: 0 0 8px 2px rgba(209,213,219,0.4); border-color: #d1d5db; }
+          50%      { box-shadow: 0 0 18px 6px rgba(209,213,219,0.7); border-color: #e5e7eb; }
+        }
+      `,
+    },
+    {
+      bg: "bg-gradient-to-br from-amber-600 to-amber-800",
+      border: "border-amber-600",
+      text: "text-amber-500",
+      label: "3.",
+      glow: "shadow-[0_0_12px_3px_rgba(217,119,6,0.45)]",
+      frameAnim: "top3Frame",
+      frameStyle: `
+        @keyframes top3Frame {
+          0%,100% { box-shadow: 0 0 8px 2px rgba(217,119,6,0.4); border-color: #d97706; }
+          50%      { box-shadow: 0 0 18px 6px rgba(217,119,6,0.7); border-color: #f59e0b; }
+        }
+      `,
+    },
   ];
 
   const members = [member1, member2, member3].filter(Boolean);
@@ -66,10 +106,16 @@ function FeaturedMembers() {
           {[member1, member2, member3].map((member, idx) => {
             if (!member) return null;
             const style = rankStyles[idx];
+            const topRank = (idx + 1) as 1 | 2 | 3;
             return (
-              <div key={member.id} className="flex flex-col items-center gap-2 p-3 rounded-lg bg-card/50 border border-card-border min-w-[100px]" data-testid={`featured-member-${idx + 1}`}>
+              <div
+                key={member.id}
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 ${style.border} min-w-[110px] bg-black/40 relative overflow-hidden`}
+                style={{ animation: `${style.frameAnim} 2.5s ease-in-out infinite` }}
+              >
+                <style>{style.frameStyle}</style>
                 <div className="relative">
-                  <Avatar className={`w-14 h-14 sm:w-16 sm:h-16 border-2 ${style.border}`}>
+                  <Avatar className={`w-14 h-14 sm:w-16 sm:h-16 border-2 ${style.border} ${style.glow}`}>
                     <AvatarImage src={member.avatar || undefined} />
                     <AvatarFallback className={`${style.bg} text-white font-bold`}>
                       {member.displayName?.charAt(0).toUpperCase()}
@@ -80,7 +126,12 @@ function FeaturedMembers() {
                   </span>
                 </div>
                 <div className="text-center">
-                  <p className={`font-semibold text-sm ${style.text}`}>{member.displayName}</p>
+                  <AnimatedUsername
+                    username={member.displayName}
+                    role={(member.role as UserRoleType) || "USER"}
+                    specialPerms={(member as any).specialPerms}
+                    isTop={topRank}
+                  />
                   <p className="text-xs text-muted-foreground">@{member.username}</p>
                 </div>
               </div>

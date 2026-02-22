@@ -64,6 +64,7 @@ type ChatMsg = {
   text: string;
   replyTo?: string;
   createdAt: number;
+  specialPerms?: any;
 };
 
 // Son mesajlar (RAM)
@@ -123,6 +124,7 @@ io.use(async (socket, next) => {
     let role = String((auth as any).role || "guest");
     let level = 1;
     let xp = 0;
+    let specialPerms: any = null;
 
     // DB'den güncel rol + xp/level (client token'ı stale olabilir)
     if (safeUserId > 0) {
@@ -133,11 +135,12 @@ io.use(async (socket, next) => {
           level = calculateLevel((dbUser as any).xp || 0);
           xp = (dbUser as any).xp || 0;
           displayName = dbUser.displayName || displayName;
+          specialPerms = (dbUser as any).specialPerms || null;
         }
       } catch {}
     }
 
-    (socket.data as any).user = { userId: safeUserId, username, displayName, role, level, xp };
+    (socket.data as any).user = { userId: safeUserId, username, displayName, role, level, xp, specialPerms };
     return next();
   } catch {
     return next(new Error("AUTH_FAILED"));
@@ -263,6 +266,7 @@ io.on("connection", (socket) => {
       text,
       replyTo: payload?.replyTo,
       createdAt: Date.now(),
+      specialPerms: u.specialPerms || null,
     };
 
     recentMessages.push(msg);
@@ -569,6 +573,8 @@ interface CinemaRoom {
   createdBy: string;
   createdByUserId: string;
   createdAt: number;
+  roomImage?: string;
+  animatedRoom?: boolean;
   participants: Map<string, { username: string; displayName: string; role: string }>;
 }
 
@@ -612,7 +618,7 @@ function simplehash(s: string): string {
 
 const cinemaIO = io.of("/cinema");
 
-cinemaIO.use((socket, next) => {
+cinemaIO.use(async (socket, next) => {
   try {
     const auth = socket.handshake.auth || {};
     const userId = String((auth as any).userId || "");
@@ -621,7 +627,14 @@ cinemaIO.use((socket, next) => {
     const role = String((auth as any).role || "guest");
     const avatar = String((auth as any).avatar || "");
     const safeUserId = userId && userId !== "undefined" && userId !== "null" ? userId : "";
-    (socket.data as any).user = { userId: safeUserId, username, displayName, role, avatar };
+    let specialPerms: any = null;
+    if (safeUserId) {
+      try {
+        const dbUser = await storage.getUser(safeUserId);
+        if (dbUser) specialPerms = (dbUser as any).specialPerms || null;
+      } catch {}
+    }
+    (socket.data as any).user = { userId: safeUserId, username, displayName, role, avatar, specialPerms };
     return next();
   } catch {
     return next(new Error("AUTH_FAILED"));
@@ -629,7 +642,7 @@ cinemaIO.use((socket, next) => {
 });
 
 cinemaIO.on("connection", (socket) => {
-  const u = (socket.data as any).user as { userId: string; username: string; displayName: string; role: string; avatar: string };
+  const u = (socket.data as any).user as { userId: string; username: string; displayName: string; role: string; avatar: string; specialPerms?: any };
   let currentRoomId: string | null = null;
 
   // Oda listesini gönder
@@ -644,10 +657,12 @@ cinemaIO.on("connection", (socket) => {
     createdBy: r.createdBy,
     createdByUserId: r.createdByUserId,
     createdAt: r.createdAt,
+    roomImage: r.roomImage,
+    animatedRoom: r.animatedRoom,
   })));
 
   // Oda oluştur
-  socket.on("cinema:create", (payload: { name?: string; videoUrl?: string; password?: string }) => {
+  socket.on("cinema:create", (payload: { name?: string; videoUrl?: string; password?: string; roomImage?: string; animatedRoom?: boolean }) => {
     if (!u.userId) {
       socket.emit("cinema:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
       return;
@@ -668,6 +683,11 @@ cinemaIO.on("connection", (socket) => {
       return;
     }
     const id = cinemaCID();
+    // animatedCinema yetkisi kontrolü
+    const hasAnimatedCinema = !!(u.specialPerms?.animatedCinema) &&
+      (!u.specialPerms?.expiresAt || new Date(u.specialPerms.expiresAt) > new Date());
+    const roomImage = hasAnimatedCinema ? (String(payload?.roomImage || "").trim() || undefined) : undefined;
+    const animatedRoom = hasAnimatedCinema ? !!(payload?.animatedRoom) : false;
     const room: CinemaRoom = {
       id,
       name,
@@ -679,6 +699,8 @@ cinemaIO.on("connection", (socket) => {
       createdBy: u.displayName,
       createdByUserId: u.userId,
       createdAt: Date.now(),
+      roomImage,
+      animatedRoom,
       participants: new Map(),
     };
     cinemaRooms.set(id, room);
@@ -696,6 +718,8 @@ cinemaIO.on("connection", (socket) => {
       createdBy: room.createdBy,
       createdByUserId: room.createdByUserId,
       createdAt: room.createdAt,
+      roomImage: room.roomImage,
+      animatedRoom: room.animatedRoom,
     });
     socket.emit("cinema:created", { roomId: id });
   });

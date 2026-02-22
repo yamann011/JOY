@@ -157,6 +157,42 @@ export default function Admin() {
     },
   });
 
+  const [isSpecialPermsOpen, setIsSpecialPermsOpen] = useState(false);
+  const [specialPermsUser, setSpecialPermsUser] = useState<User | null>(null);
+  const [specialPermsData, setSpecialPermsData] = useState({
+    animatedName: false,
+    gifAvatar: false,
+    animatedCinema: false,
+    expiresAt: "",
+  });
+
+  const specialPermsMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof specialPermsData }) => {
+      const response = await apiRequest("PATCH", `/api/admin/users/${id}/special-perms`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setIsSpecialPermsOpen(false);
+      toast({ title: "Başarılı", description: "Özel yetkiler güncellendi" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Hata", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleOpenSpecialPerms = (u: User) => {
+    setSpecialPermsUser(u);
+    const sp = (u as any).specialPerms;
+    setSpecialPermsData({
+      animatedName: !!(sp?.animatedName),
+      gifAvatar: !!(sp?.gifAvatar),
+      animatedCinema: !!(sp?.animatedCinema),
+      expiresAt: sp?.expiresAt ? new Date(sp.expiresAt).toISOString().slice(0, 10) : "",
+    });
+    setIsSpecialPermsOpen(true);
+  };
+
   const deleteUserMutation = useMutation({
     mutationFn: async (id: string) => {
       const response = await apiRequest("DELETE", `/api/admin/users/${id}`);
@@ -600,6 +636,9 @@ export default function Admin() {
                           {(u as any).isBanned && (
                             <Badge variant="destructive" className="bg-red-600">BANNED</Badge>
                           )}
+                          {(u as any).specialPerms?.animatedName && (
+                            <Badge className="bg-purple-600/20 text-purple-400 border-purple-500/30 text-xs">✨ Özel</Badge>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -607,6 +646,15 @@ export default function Admin() {
                             data-testid={`button-edit-user-${u.id}`}
                           >
                             <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenSpecialPerms(u)}
+                            title="Özel Yetkiler"
+                            className="text-purple-400 hover:text-purple-300"
+                          >
+                            <Star className="w-4 h-4" />
                           </Button>
                           {(u as any).isBanned ? (
                             <Button
@@ -717,6 +765,86 @@ export default function Admin() {
                   >
                     <Save className="w-4 h-4 mr-2" />
                     {updateUserMutation.isPending ? "Kaydediliyor..." : "Degisiklikleri Kaydet"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Özel Yetki Modalı */}
+            <Dialog open={isSpecialPermsOpen} onOpenChange={setIsSpecialPermsOpen}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Star className="w-5 h-5 text-purple-400" />
+                    Özel Yetkiler: {specialPermsUser?.displayName}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-3 border border-purple-500/20 rounded-lg p-4 bg-purple-500/5">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Switch
+                        checked={specialPermsData.animatedName}
+                        onCheckedChange={v => setSpecialPermsData(p => ({ ...p, animatedName: v }))}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">✨ Animasyonlu İsim</p>
+                        <p className="text-xs text-muted-foreground">Kullanıcının ismi sohbet ve profilde renkli animasyonlu görünür</p>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Switch
+                        checked={specialPermsData.gifAvatar}
+                        onCheckedChange={v => setSpecialPermsData(p => ({ ...p, gifAvatar: v }))}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">🖼️ GIF Profil Resmi</p>
+                        <p className="text-xs text-muted-foreground">Kullanıcı profil resmi olarak hareketli GIF kullanabilir</p>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Switch
+                        checked={specialPermsData.animatedCinema}
+                        onCheckedChange={v => setSpecialPermsData(p => ({ ...p, animatedCinema: v }))}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">🎬 Animasyonlu Sinema Odası</p>
+                        <p className="text-xs text-muted-foreground">Kullanıcı resimli ve animasyonlu çerçeveli oda oluşturabilir</p>
+                      </div>
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Bitiş Tarihi (boş = sınırsız)</Label>
+                    <Input
+                      type="date"
+                      value={specialPermsData.expiresAt}
+                      onChange={e => setSpecialPermsData(p => ({ ...p, expiresAt: e.target.value }))}
+                    />
+                    {specialPermsData.expiresAt && (
+                      <Button variant="ghost" size="sm" className="text-xs text-muted-foreground"
+                        onClick={() => setSpecialPermsData(p => ({ ...p, expiresAt: "" }))}>
+                        Sınırsız yap
+                      </Button>
+                    )}
+                  </div>
+                  <Button
+                    className="w-full bg-purple-600 hover:bg-purple-500 text-white"
+                    onClick={() => {
+                      if (specialPermsUser) {
+                        specialPermsMutation.mutate({
+                          id: specialPermsUser.id,
+                          data: {
+                            ...specialPermsData,
+                            expiresAt: specialPermsData.expiresAt
+                              ? new Date(specialPermsData.expiresAt + "T23:59:59").toISOString()
+                              : "",
+                          }
+                        });
+                      }
+                    }}
+                    disabled={specialPermsMutation.isPending}
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {specialPermsMutation.isPending ? "Kaydediliyor..." : "Yetkileri Kaydet"}
                   </Button>
                 </div>
               </DialogContent>

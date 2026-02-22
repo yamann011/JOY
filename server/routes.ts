@@ -675,6 +675,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ message: "Kullanıcı silindi" });
   });
 
+  app.patch("/api/admin/users/:id/special-perms", requireAuth, async (req, res) => {
+    const currentUser = await storage.getUser(req.userId!);
+    if (!isAdmin(currentUser?.role)) {
+      return res.status(403).json({ message: "Yetkisiz erişim" });
+    }
+    const { animatedName, gifAvatar, animatedCinema, expiresAt } = req.body;
+    const perms: Record<string, any> = {};
+    if (animatedName !== undefined) perms.animatedName = !!animatedName;
+    if (gifAvatar !== undefined) perms.gifAvatar = !!gifAvatar;
+    if (animatedCinema !== undefined) perms.animatedCinema = !!animatedCinema;
+    perms.expiresAt = expiresAt || null;
+    const user = await storage.updateUser(req.params.id, { specialPerms: perms });
+    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    const { password: _pw, ...safe } = user as any;
+    res.json(safe);
+  });
+
   app.get("/api/settings/film", requireAuth, async (req, res) => {
     const filmUrl = await storage.getSetting("filmUrl");
     res.json({ filmUrl: filmUrl || "" });
