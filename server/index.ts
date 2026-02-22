@@ -690,11 +690,15 @@ cinemaIO.on("connection", (socket) => {
     const id = cinemaCID();
     // DB'den specialPerms kontrolü (lazy fetch)
     let specialPerms: any = null;
+    let dbUserRole: string = u.role || "USER";
     try {
       const dbUser = await storage.getUser(u.userId as any);
-      if (dbUser) specialPerms = (dbUser as any).specialPerms || null;
+      if (dbUser) {
+        specialPerms = (dbUser as any).specialPerms || null;
+        dbUserRole = (dbUser as any).role || dbUserRole;
+      }
     } catch {}
-    const hasAnimatedCinema = hasSpecialPerm(dbUser?.role || u.role, specialPerms, "animatedCinema");
+    const hasAnimatedCinema = hasSpecialPerm(dbUserRole, specialPerms, "animatedCinema");
     const roomImage = hasAnimatedCinema ? (String(payload?.roomImage || "").trim() || undefined) : undefined;
     const animatedRoom = hasAnimatedCinema ? !!(payload?.animatedRoom) : false;
     const room: CinemaRoom = {
