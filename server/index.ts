@@ -522,11 +522,19 @@ interface CinemaRoom {
   passwordHash?: string;
   videoUrl: string;
   currentTime: number;
+  lastSyncAt: number; // server timestamp — elapsed time hesabı için
   isPlaying: boolean;
   createdBy: string;
   createdByUserId: string;
   createdAt: number;
   participants: Map<string, { username: string; displayName: string; role: string }>;
+}
+
+/** Odanın gerçek anlık oynatma zamanını hesapla */
+function calcCurrentTime(room: CinemaRoom): number {
+  if (!room.isPlaying) return room.currentTime;
+  const elapsed = (Date.now() - room.lastSyncAt) / 1000;
+  return room.currentTime + elapsed;
 }
 
 interface CinemaMsg {
@@ -616,6 +624,7 @@ cinemaIO.on("connection", (socket) => {
       passwordHash: payload?.password ? simplehash(payload.password) : undefined,
       videoUrl,
       currentTime: 0,
+      lastSyncAt: Date.now(),
       isPlaying: false,
       createdBy: u.displayName,
       createdByUserId: u.userId,
@@ -667,10 +676,10 @@ cinemaIO.on("connection", (socket) => {
     room.participants.set(socket.id, { username: u.username, displayName: u.displayName, role: u.role });
     socket.join(`cinema:${roomId}`);
 
-    // Mevcut durumu gönder
+    // Mevcut durumu gönder — elapsed time ile gerçek zamanı hesapla
     socket.emit("cinema:state", {
       videoUrl: room.videoUrl,
-      currentTime: room.currentTime,
+      currentTime: calcCurrentTime(room),
       isPlaying: room.isPlaying,
       createdByUserId: room.createdByUserId,
     });
@@ -708,6 +717,7 @@ cinemaIO.on("connection", (socket) => {
     }
     room.isPlaying = true;
     room.currentTime = Number(payload?.currentTime ?? room.currentTime);
+    room.lastSyncAt = Date.now();
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: true, currentTime: room.currentTime, by: u.username });
   });
 
@@ -720,7 +730,8 @@ cinemaIO.on("connection", (socket) => {
       return;
     }
     room.isPlaying = false;
-    room.currentTime = Number(payload?.currentTime ?? room.currentTime);
+    room.currentTime = Number(payload?.currentTime ?? calcCurrentTime(room));
+    room.lastSyncAt = Date.now();
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: false, currentTime: room.currentTime, by: u.username });
   });
 
@@ -730,7 +741,18 @@ cinemaIO.on("connection", (socket) => {
     if (!room) return;
     if (!canControlVideo(room)) return;
     room.currentTime = Number(payload?.currentTime ?? 0);
+    room.lastSyncAt = Date.now();
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: room.isPlaying, currentTime: room.currentTime, by: u.username });
+  });
+
+  // Heartbeat — oda sahibi her 5sn'de currentTime gönderir
+  socket.on("cinema:heartbeat", (payload: { currentTime?: number }) => {
+    if (!currentRoomId) return;
+    const room = cinemaRooms.get(currentRoomId);
+    if (!room || !room.isPlaying) return;
+    if (!canControlVideo(room)) return;
+    room.currentTime = Number(payload?.currentTime ?? room.currentTime);
+    room.lastSyncAt = Date.now();
   });
 
   // URL değiştir (admin/mod veya oda kurucusu kontrolü)
@@ -747,6 +769,7 @@ cinemaIO.on("connection", (socket) => {
     if (!url) return;
     room.videoUrl = url;
     room.currentTime = 0;
+    room.lastSyncAt = Date.now();
     room.isPlaying = false;
     cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:url_changed", { videoUrl: url, by: u.username });
   });
