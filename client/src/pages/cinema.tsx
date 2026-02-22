@@ -347,7 +347,7 @@ export default function CinemaPage() {
     socket.on("cinema:message", (msg: CinemaMsg) => setMessages(prev => [...prev, msg]));
     socket.on("cinema:chat_cleared", () => setMessages([]));
 
-    socket.on("cinema:sync", ({ isPlaying, currentTime }: { isPlaying: boolean; currentTime: number; by: string }) => {
+    socket.on("cinema:sync", ({ isPlaying, currentTime, isSeeked }: { isPlaying: boolean; currentTime: number; by: string; isSeeked?: boolean }) => {
       const prevIsPlaying = syncWasPlayingRef.current;
       syncWasPlayingRef.current = isPlaying;
       videoStateRef.current = videoStateRef.current ? { ...videoStateRef.current, isPlaying, currentTime } : videoStateRef.current;
@@ -368,7 +368,14 @@ export default function CinemaPage() {
           const iframe = iframeRef.current;
           const timeDiff = Math.abs(localTimeRef.current - currentTime);
 
-          if (timeDiff > 8) {
+          if (isSeeked && iframe && playerReadyRef.current) {
+            // Owner seek yaptı → timeDiff'e bakmadan anında seekTo
+            seekingByUsRef.current = true;
+            setTimeout(() => { seekingByUsRef.current = false; }, 2000);
+            ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
+            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+            else ytCommand(iframe, "pauseVideo");
+          } else if (isSeeked || timeDiff > 8) {
             // Seek farkı büyük → iframe reload (doğru pozisyondan başlat)
             playerReadyRef.current = false;
             lastReloadTimeRef.current = Date.now();

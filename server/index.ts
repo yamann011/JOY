@@ -831,7 +831,7 @@ cinemaIO.on("connection", (socket) => {
     if (!canControlVideo(room)) return;
     room.currentTime = Number(payload?.currentTime ?? 0);
     room.lastSyncAt = Date.now();
-    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: room.isPlaying, currentTime: room.currentTime, by: u.username });
+    cinemaIO.to(`cinema:${currentRoomId}`).emit("cinema:sync", { isPlaying: room.isPlaying, currentTime: room.currentTime, by: u.username, isSeeked: true });
   });
 
   // Heartbeat — oda sahibi her 5sn'de currentTime gönderir
