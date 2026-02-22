@@ -74,7 +74,7 @@ function toEmbedUrl(url: string, startTime = 0, autoplay = false): string {
   if (ytId) {
     const start = Math.floor(startTime);
     const ap = autoplay ? 1 : 0;
-    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=1&start=${start}&autoplay=${ap}&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=1&start=${start}&autoplay=0&mute=0&origin=${encodeURIComponent(window.location.origin)}`;
   }
   return url;
 }
@@ -374,9 +374,7 @@ export default function CinemaPage() {
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             if (!playerReadyRef.current) playerReadyRef.current = true;
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
-            ytCommand(iframe, "unMute");
-            ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
-            if (isPlaying) setTimeout(() => { ytCommand(iframe, "playVideo"); ytCommand(iframe, "unMute"); }, 50);
+            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
             else ytCommand(iframe, "pauseVideo");
           } else if (timeDiff > 12) {
             // Çok büyük fark → iframe reload (son çare)
@@ -388,8 +386,6 @@ export default function CinemaPage() {
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
-            ytCommand(iframe, "unMute");
-            ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
             if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
             else ytCommand(iframe, "pauseVideo");
           } else if (!isPlaying) {
@@ -473,17 +469,11 @@ export default function CinemaPage() {
           const iframe = iframeRef.current;
           if (!iframe) return;
           const vs = videoStateRef.current;
-          // Ses aç — mute=1 ile yüklendi, açılması gerek
+          // mute=0 ile yüklendiği için unmute gerekmez — sadece volume ayarla
           const savedVol = parseInt(localStorage.getItem("cinema_volume") || "100", 10);
           volumeRef.current = savedVol;
-          const applyAudio = () => {
-            ytCommand(iframe, "unMute");
-            ytCommand(iframe, "setVolume", [savedVol]);
-            setIsMuted(false);
-          };
-          applyAudio();
-          // Backup: 400ms sonra tekrar (YouTube bazen ilk unMute'u görmezden gelir)
-          setTimeout(applyAudio, 400);
+          ytCommand(iframe, "setVolume", [savedVol]);
+          setIsMuted(false);
           // Doğru zamana git — iframe set edildiği andan bu yana geçen tam süreyi ekle
           const seekTarget = pendingSeekRef.current ?? vs?.currentTime ?? 0;
           const refTime = iframeSrcSetAtRef.current || stateReceivedAtRef.current;
@@ -518,9 +508,6 @@ export default function CinemaPage() {
           if (ytState === 1) {
             // Oynatıldı
             setNeedsClickToPlay(false);
-            // Ses her zaman aç — seek/buffer sonrası YouTube sesi kapatmış olabilir
-            const iframe = iframeRef.current;
-            if (iframe) { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [volumeRef.current || 100]); }
             if (isOwner) {
               setVideoState(prev => prev ? { ...prev, isPlaying: true } : prev);
               if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: true };
@@ -650,8 +637,6 @@ export default function CinemaPage() {
     const iframe = iframeRef.current;
     if (iframe) {
       ytCommand(iframe, "seekTo", [Math.floor(newTime), true]);
-      ytCommand(iframe, "unMute");
-      ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
       if (videoStateRef.current?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
     }
     const videoEl = videoRef.current;
