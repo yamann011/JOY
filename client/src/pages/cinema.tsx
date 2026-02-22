@@ -261,9 +261,6 @@ export default function CinemaPage() {
           const found = data.find(r => r.id === savedRoom.id);
           if (found) {
             pendingRejoinRef.current = found;
-            // Autoplay engeli: yenileme sonrası hemen overlay göster, kullanıcı tıklayınca video başlar
-            needsClickToPlayRef.current = true;
-            setNeedsClickToPlay(true);
             socket.emit("cinema:join", { roomId: found.id, password: "" });
           } else {
             localStorage.removeItem("cinema_last_room");
@@ -386,7 +383,7 @@ export default function CinemaPage() {
           const vs = videoStateRef.current;
           const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
           const liveTime = Math.floor((vs?.currentTime ?? 0) + elapsed);
-          // Önce sessiz başlat (tarayıcı izni gerektirmez)
+          // Sessiz başlat → seek → oynat (tarayıcı izin verir)
           ytCommand(iframe, "mute");
           ytCommand(iframe, "seekTo", [liveTime, true]);
           if (vs?.isPlaying) {
@@ -397,7 +394,7 @@ export default function CinemaPage() {
                 ytCommand(iframe, "unMute");
                 ytCommand(iframe, "setVolume", [100]);
                 setIsMuted(false);
-              }, 300);
+              }, 400);
             }, 200);
           } else {
             ytCommand(iframe, "pauseVideo");
@@ -639,18 +636,20 @@ export default function CinemaPage() {
                     allowFullScreen
                     onLoad={() => {
                       const iframe = iframeRef.current;
-                      if (!iframe) return;
+                      if (!iframe || playerReadyRef.current) return; // onReady zaten hallettiyse atla
                       setTimeout(() => {
-                        ytCommand(iframe, "unMute");
-                        ytCommand(iframe, "setVolume", [100]);
                         const vs = videoStateRef.current;
+                        const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
+                        const liveTime = Math.floor((vs?.currentTime ?? 0) + elapsed);
+                        ytCommand(iframe, "mute");
+                        ytCommand(iframe, "seekTo", [liveTime, true]);
                         if (vs?.isPlaying) {
-                          const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
-                          const liveTime = Math.floor((vs.currentTime ?? 0) + elapsed);
-                          ytCommand(iframe, "seekTo", [liveTime, true]);
-                          setTimeout(() => ytCommand(iframe, "playVideo"), 200);
+                          ytCommand(iframe, "playVideo");
+                          setTimeout(() => {
+                            ytCommand(iframe, "unMute");
+                            ytCommand(iframe, "setVolume", [100]);
+                          }, 500);
                         } else {
-                          ytCommand(iframe, "seekTo", [Math.floor(vs?.currentTime ?? 0), true]);
                           ytCommand(iframe, "pauseVideo");
                         }
                       }, 2000);
