@@ -194,6 +194,8 @@ export default function CinemaPage() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const pendingRejoinRef = useRef<CinemaRoomInfo | null>(null);
   const playerReadyRef = useRef(false); // YouTube player hazır mı?
+  const syncWasPlayingRef = useRef(false); // Son sync'te isPlaying durumu
+  const lastReloadTimeRef = useRef(0); // Son iframe reload zamanı (ms)
 
   const [iframeSrc, setIframeSrc] = useState("");
   const [iframeKey, setIframeKey] = useState(0); // iframe'i zorla yeniden yükle
@@ -309,6 +311,8 @@ export default function CinemaPage() {
     socket.on("cinema:chat_cleared", () => setMessages([]));
 
     socket.on("cinema:sync", ({ isPlaying, currentTime }: { isPlaying: boolean; currentTime: number; by: string }) => {
+      const prevIsPlaying = syncWasPlayingRef.current;
+      syncWasPlayingRef.current = isPlaying;
       videoStateRef.current = videoStateRef.current ? { ...videoStateRef.current, isPlaying, currentTime } : videoStateRef.current;
       setVideoState(prev => prev ? { ...prev, isPlaying, currentTime } : prev);
       setCurrentRoom(prev => prev ? { ...prev, isPlaying } : prev);
@@ -316,22 +320,35 @@ export default function CinemaPage() {
       if (!isOwner) {
         const videoEl = videoRef.current;
         if (videoEl) {
-          // Direct video element — anlık sync
           if (Math.abs(videoEl.currentTime - currentTime) > 1.5) videoEl.currentTime = currentTime;
           if (isPlaying && videoEl.paused) videoEl.play().catch(() => {});
           else if (!isPlaying && !videoEl.paused) videoEl.pause();
         } else {
-          // YouTube iframe — en güvenilir yol: iframe'i yeniden yükle
           const url = videoStateRef.current?.videoUrl;
           if (url) {
-            if (isPlaying) {
-              // Oynat: iframe reload ile start= garantili
-              playerReadyRef.current = false;
-              setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
-            } else {
-              // Duraklat: postMessage yeterli
+            if (!isPlaying) {
+              // Duraklat: postMessage yeterli, reload yok
               const iframe = iframeRef.current;
               if (iframe) ytCommand(iframe, "pauseVideo");
+            } else {
+              // Oynat: sadece şu durumlarda iframe reload et:
+              // 1) Oynat/duraklat geçişi (paused → playing)
+              // 2) Seek farkı 8 saniyeden fazla
+              // 3) Son reload üzerinden 10 saniye geçmiş VE player hazır değil
+              const timeDiff = Math.abs(localTimeRef.current - currentTime);
+              const now = Date.now();
+              const sinceLastReload = now - lastReloadTimeRef.current;
+              const needsReload =
+                (!prevIsPlaying && isPlaying) ||        // geçiş
+                (timeDiff > 8) ||                        // seek
+                (!playerReadyRef.current && sinceLastReload > 10000); // player hazır değil
+
+              if (needsReload) {
+                playerReadyRef.current = false;
+                lastReloadTimeRef.current = now;
+                setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
+              }
+              // Zaten oynuyorsa ve player hazırsa → hiçbir şey yapma (heartbeat güncellemesi)
             }
           }
         }
