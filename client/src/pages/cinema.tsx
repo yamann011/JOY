@@ -312,10 +312,29 @@ export default function CinemaPage() {
       videoStateRef.current = videoStateRef.current ? { ...videoStateRef.current, isPlaying, currentTime } : videoStateRef.current;
       setVideoState(prev => prev ? { ...prev, isPlaying, currentTime } : prev);
       setCurrentRoom(prev => prev ? { ...prev, isPlaying } : prev);
-      // Oda sahibinin iframe'i yeniden yüklenmez — o zaten kontrolü yapan kişi
       const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
       if (!isOwner) {
-        syncIframeFnRef.current?.(isPlaying, currentTime);
+        const videoEl = videoRef.current;
+        if (videoEl) {
+          // Direct video element — anlık sync
+          if (Math.abs(videoEl.currentTime - currentTime) > 1.5) videoEl.currentTime = currentTime;
+          if (isPlaying && videoEl.paused) videoEl.play().catch(() => {});
+          else if (!isPlaying && !videoEl.paused) videoEl.pause();
+        } else {
+          // YouTube iframe — en güvenilir yol: iframe'i yeniden yükle
+          const url = videoStateRef.current?.videoUrl;
+          if (url) {
+            if (isPlaying) {
+              // Oynat: iframe reload ile start= garantili
+              playerReadyRef.current = false;
+              setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
+            } else {
+              // Duraklat: postMessage yeterli
+              const iframe = iframeRef.current;
+              if (iframe) ytCommand(iframe, "pauseVideo");
+            }
+          }
+        }
       }
     });
 
