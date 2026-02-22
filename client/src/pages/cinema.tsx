@@ -194,6 +194,7 @@ export default function CinemaPage() {
   const pendingRejoinRef = useRef<CinemaRoomInfo | null>(null);
   const playerReadyRef = useRef(false); // YouTube player hazır mı?
   const syncWasPlayingRef = useRef(false); // Son sync'te isPlaying durumu
+  const ownerPauseIntentRef = useRef(false); // Owner bilerek mi duraklattı
   const lastReloadTimeRef = useRef(0); // Son iframe reload zamanı (ms)
 
   const [iframeSrc, setIframeSrc] = useState("");
@@ -527,12 +528,18 @@ export default function CinemaPage() {
           } else if (ytState === 2) {
             // Duraklatıldı
             if (isOwner) {
-              // Owner duraklattı → state güncelle + server'a bildir
-              setVideoState(prev => prev ? { ...prev, isPlaying: false } : prev);
-              if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: false };
-              if (syncWasPlayingRef.current) {
+              // Sadece owner bilerek duraklattıysa server'a bildir
+              // (autoplay bloğu / buffer durmasında tetiklenmesin)
+              if (ownerPauseIntentRef.current) {
+                ownerPauseIntentRef.current = false;
                 syncWasPlayingRef.current = false;
+                setVideoState(prev => prev ? { ...prev, isPlaying: false } : prev);
+                if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: false };
                 socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
+              } else if (syncWasPlayingRef.current && playerReadyRef.current) {
+                // Beklenmedik durma (buffer/autoplay bloğu) → kurtarma
+                const iframe = iframeRef.current;
+                if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 200);
               }
             } else if (syncWasPlayingRef.current && playerReadyRef.current) {
               // İzleyici videosu beklenmedik şekilde durdu → hemen kurtarma
@@ -626,6 +633,7 @@ export default function CinemaPage() {
     if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 100);
   };
   const handlePause = () => {
+    ownerPauseIntentRef.current = true;
     const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:pause", { currentTime: time });
     if (!videoRef.current) ytCommand(iframeRef.current!, "pauseVideo");
