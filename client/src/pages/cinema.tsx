@@ -74,7 +74,7 @@ function toEmbedUrl(url: string, startTime = 0, autoplay = false): string {
   if (ytId) {
     const start = Math.floor(startTime);
     const ap = autoplay ? 1 : 0;
-    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=1&start=${start}&autoplay=0&mute=0&origin=${encodeURIComponent(window.location.origin)}`;
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=1&start=${start}&autoplay=${ap}&mute=0&origin=${encodeURIComponent(window.location.origin)}`;
   }
   return url;
 }
