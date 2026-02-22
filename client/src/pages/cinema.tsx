@@ -207,6 +207,9 @@ export default function CinemaPage() {
   const [videoState, setVideoState] = useState<VideoState | null>(null);
   const [needsClickToPlay, setNeedsClickToPlay] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [seekOverlay, setSeekOverlay] = useState(false);
+  const seekOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashSeekOverlayRef = useRef<() => void>(() => {});
   const [volume, setVolume] = useState(100);
   const volumeRef = useRef(100);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -397,6 +400,7 @@ export default function CinemaPage() {
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             if (!playerReadyRef.current) playerReadyRef.current = true;
+            flashSeekOverlayRef.current();
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
             if (isPlaying) setTimeout(() => { ytCommand(iframe, "playVideo"); isSyncingRef.current = false; }, 50);
             else { ytCommand(iframe, "pauseVideo"); isSyncingRef.current = false; }
@@ -709,10 +713,18 @@ export default function CinemaPage() {
     seekingTimerRef.current = setTimeout(() => { seekingByUsRef.current = false; }, 2000);
   };
 
+  const flashSeekOverlay = () => {
+    if (seekOverlayTimerRef.current) clearTimeout(seekOverlayTimerRef.current);
+    setSeekOverlay(true);
+    seekOverlayTimerRef.current = setTimeout(() => setSeekOverlay(false), 400);
+  };
+  flashSeekOverlayRef.current = flashSeekOverlay;
+
   const handleSeek = (newTime: number) => {
     markSeekingByUs();
     localTimeRef.current = newTime;
     setSeekSliderVal(newTime);
+    flashSeekOverlay();
     socketRef.current?.emit("cinema:seek", { currentTime: newTime });
     const iframe = iframeRef.current;
     if (iframe) {
@@ -876,6 +888,10 @@ export default function CinemaPage() {
                   />
                   {/* Tüm YouTube kontrollerini kapat — owner ve izleyici için */}
                   <div className="absolute inset-0 z-10" style={{ pointerEvents: "auto", background: "transparent" }} />
+                  {/* Seek flash overlay — YouTube oynat ikonunu gizle */}
+                  {seekOverlay && (
+                    <div className="absolute inset-0 z-20 bg-black" style={{ pointerEvents: "none" }} />
+                  )}
                 </>
               ) : isDirect(videoState.videoUrl) ? (
                 <video
