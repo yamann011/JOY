@@ -337,7 +337,7 @@ export default function CinemaPage() {
           const elapsed = state.isPlaying ? (Date.now() - stateReceivedAtRef.current) / 1000 : 0;
           const target = Math.floor(state.currentTime + elapsed);
           ytCommand(iframe, "seekTo", [target, true]);
-          if (state.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+          if (state.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
           else ytCommand(iframe, "pauseVideo");
         }
       }
@@ -373,7 +373,7 @@ export default function CinemaPage() {
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
-            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
             else ytCommand(iframe, "pauseVideo");
           } else if (isSeeked || timeDiff > 8) {
             // Seek farkı büyük → iframe reload (doğru pozisyondan başlat)
@@ -450,7 +450,7 @@ export default function CinemaPage() {
       ytCommand(iframe, "seekTo", [Math.floor(time), true]);
       ytCommand(iframe, "unMute");
       ytCommand(iframe, "setVolume", [100]);
-      setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+      setTimeout(() => ytCommand(iframe, "playVideo"), 50);
     } else {
       ytCommand(iframe, "pauseVideo");
     }
@@ -812,8 +812,8 @@ export default function CinemaPage() {
                 ) : (
                   <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın</span>
                 )}
-                {/* Ses kontrolü — sadece izleyiciler için (oda sahibi YouTube ses barını kullanır) */}
-                {isYouTube(videoState.videoUrl) && !showControls && (
+                {/* Ses kontrolü — owner ve izleyici için (owner da görecek) */}
+                {isYouTube(videoState.videoUrl) && (
                   <div className="ml-auto flex items-center gap-2">
                     <button
                       className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-2 py-1 rounded-full transition-colors"
@@ -822,12 +822,14 @@ export default function CinemaPage() {
                         if (!iframe) return;
                         if (isMuted) {
                           ytCommand(iframe, "unMute");
-                          ytCommand(iframe, "setVolume", [volumeRef.current]);
+                          ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
                           setIsMuted(false);
                         } else {
                           ytCommand(iframe, "mute");
                           setIsMuted(true);
                         }
+                        // Ses değişikliği sonrası video duruyorsa koru
+                        if (videoStateRef.current?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 300);
                       }}
                     >
                       {isMuted ? "🔇" : "🔊"}
@@ -843,6 +845,7 @@ export default function CinemaPage() {
                         if (!iframe) return;
                         if (v === 0) { ytCommand(iframe, "mute"); setIsMuted(true); }
                         else { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [v]); setIsMuted(false); }
+                        if (videoStateRef.current?.isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 300);
                       }}
                       className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
                       style={{ accentColor: "#eab308" }}
