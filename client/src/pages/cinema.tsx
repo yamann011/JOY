@@ -469,6 +469,10 @@ export default function CinemaPage() {
       toast({ title: "İsim ve URL gerekli", variant: "destructive" });
       return;
     }
+    if (!isYouTube(createUrl.trim())) {
+      toast({ title: "Sadece YouTube linkleri kabul edilir", variant: "destructive" });
+      return;
+    }
     socketRef.current?.emit("cinema:create", {
       name: createName.trim(),
       videoUrl: createUrl.trim(),
@@ -486,6 +490,10 @@ export default function CinemaPage() {
 
   const handleChangeUrl = () => {
     if (!newUrl.trim()) return;
+    if (!isYouTube(newUrl.trim())) {
+      toast({ title: "Sadece YouTube linkleri kabul edilir", variant: "destructive" });
+      return;
+    }
     socketRef.current?.emit("cinema:change_url", { videoUrl: newUrl.trim() });
     setNewUrl(""); setShowChangeUrl(false);
   };
@@ -503,6 +511,10 @@ export default function CinemaPage() {
       setCurrentRoom(prev => prev ? { ...prev, hasPassword: true } : prev);
     }
     if (newUrl.trim()) {
+      if (!isYouTube(newUrl.trim())) {
+        toast({ title: "Sadece YouTube linkleri kabul edilir", variant: "destructive" });
+        return;
+      }
       socketRef.current?.emit("cinema:change_url", { videoUrl: newUrl.trim() });
       setNewUrl("");
     }

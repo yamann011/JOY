@@ -598,6 +598,10 @@ function cinemaCID(): string {
   return `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function isYouTubeUrl(url: string): boolean {
+  return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch|shorts|embed|live)|youtu\.be\/)/.test(url);
+}
+
 function simplehash(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -657,6 +661,10 @@ cinemaIO.on("connection", (socket) => {
     const videoUrl = String(payload?.videoUrl || "").trim();
     if (!name || !videoUrl) {
       socket.emit("cinema:error", { code: "INVALID", message: "İsim ve video URL gerekli." });
+      return;
+    }
+    if (!isYouTubeUrl(videoUrl)) {
+      socket.emit("cinema:error", { code: "INVALID", message: "Sadece YouTube linkleri kabul edilir." });
       return;
     }
     const id = cinemaCID();
@@ -807,6 +815,10 @@ cinemaIO.on("connection", (socket) => {
     }
     const url = String(payload?.videoUrl || "").trim();
     if (!url) return;
+    if (!isYouTubeUrl(url)) {
+      socket.emit("cinema:error", { code: "INVALID", message: "Sadece YouTube linkleri kabul edilir." });
+      return;
+    }
     room.videoUrl = url;
     room.currentTime = 0;
     room.lastSyncAt = Date.now();
