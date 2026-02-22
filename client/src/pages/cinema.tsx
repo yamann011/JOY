@@ -327,31 +327,37 @@ export default function CinemaPage() {
       if (!isOwner) {
         const videoEl = videoRef.current;
         if (videoEl) {
+          // Direct video — anlık sync
           if (Math.abs(videoEl.currentTime - currentTime) > 1.5) videoEl.currentTime = currentTime;
           if (isPlaying && videoEl.paused) videoEl.play().catch(() => {});
           else if (!isPlaying && !videoEl.paused) videoEl.pause();
         } else {
           const url = videoStateRef.current?.videoUrl;
-          if (url) {
-            if (!isPlaying) {
-              // Duraklat: postMessage yeterli, reload yok
-              const iframe = iframeRef.current;
-              if (iframe) ytCommand(iframe, "pauseVideo");
-            } else {
-              // Oynat: sadece şu durumlarda iframe reload et:
-              // 1) Oynat/duraklat geçişi (paused → playing)
-              // 2) Seek farkı 8 saniyeden fazla
-              const timeDiff = Math.abs(localTimeRef.current - currentTime);
-              const needsReload =
-                (!prevIsPlaying && isPlaying) ||   // geçiş
-                (timeDiff > 8);                     // seek
+          if (!url) return;
 
-              if (needsReload) {
+          const iframe = iframeRef.current;
+          const timeDiff = Math.abs(localTimeRef.current - currentTime);
+
+          if (timeDiff > 8) {
+            // Seek farkı büyük → iframe reload (doğru pozisyondan başlat)
+            playerReadyRef.current = false;
+            lastReloadTimeRef.current = Date.now();
+            setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
+          } else if (!isPlaying) {
+            // Duraklat → postMessage
+            if (iframe && playerReadyRef.current) ytCommand(iframe, "pauseVideo");
+          } else {
+            // Oynat → postMessage (reload yok, kesintisiz)
+            if (iframe && playerReadyRef.current) {
+              ytCommand(iframe, "playVideo");
+            } else if (!playerReadyRef.current) {
+              // Player henüz yüklenmemiş → reload gerekiyor (sadece ilk kez)
+              const sinceLastReload = Date.now() - lastReloadTimeRef.current;
+              if (sinceLastReload > 5000) {
                 playerReadyRef.current = false;
                 lastReloadTimeRef.current = Date.now();
                 setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
               }
-              // Zaten oynuyorsa → hiçbir şey yapma (heartbeat güncellemesi)
             }
           }
         }
