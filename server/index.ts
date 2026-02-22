@@ -619,7 +619,7 @@ function simplehash(s: string): string {
 
 const cinemaIO = io.of("/cinema");
 
-cinemaIO.use(async (socket, next) => {
+cinemaIO.use((socket, next) => {
   try {
     const auth = socket.handshake.auth || {};
     const userId = String((auth as any).userId || "");
@@ -628,14 +628,8 @@ cinemaIO.use(async (socket, next) => {
     const role = String((auth as any).role || "guest");
     const avatar = String((auth as any).avatar || "");
     const safeUserId = userId && userId !== "undefined" && userId !== "null" ? userId : "";
-    let specialPerms: any = null;
-    if (safeUserId) {
-      try {
-        const dbUser = await storage.getUser(safeUserId);
-        if (dbUser) specialPerms = (dbUser as any).specialPerms || null;
-      } catch {}
-    }
-    (socket.data as any).user = { userId: safeUserId, username, displayName, role, avatar, specialPerms };
+    // specialPerms will be fetched lazily on cinema:create via DB
+    (socket.data as any).user = { userId: safeUserId, username, displayName, role, avatar, specialPerms: null };
     return next();
   } catch {
     return next(new Error("AUTH_FAILED"));
@@ -663,7 +657,7 @@ cinemaIO.on("connection", (socket) => {
   })));
 
   // Oda oluştur
-  socket.on("cinema:create", (payload: { name?: string; videoUrl?: string; password?: string; roomImage?: string; animatedRoom?: boolean }) => {
+  socket.on("cinema:create", async (payload: { name?: string; videoUrl?: string; password?: string; roomImage?: string; animatedRoom?: boolean }) => {
     if (!u.userId) {
       socket.emit("cinema:error", { code: "AUTH", message: "Giriş yapman gerekiyor." });
       return;
@@ -684,9 +678,14 @@ cinemaIO.on("connection", (socket) => {
       return;
     }
     const id = cinemaCID();
-    // animatedCinema yetkisi kontrolü
-    const hasAnimatedCinema = !!(u.specialPerms?.animatedCinema) &&
-      (!u.specialPerms?.expiresAt || new Date(u.specialPerms.expiresAt) > new Date());
+    // DB'den specialPerms kontrolü (lazy fetch)
+    let specialPerms: any = null;
+    try {
+      const dbUser = await storage.getUser(u.userId as any);
+      if (dbUser) specialPerms = (dbUser as any).specialPerms || null;
+    } catch {}
+    const isExpired = specialPerms?.expiresAt && new Date(specialPerms.expiresAt) <= new Date();
+    const hasAnimatedCinema = !!(specialPerms?.animatedCinema) && !isExpired;
     const roomImage = hasAnimatedCinema ? (String(payload?.roomImage || "").trim() || undefined) : undefined;
     const animatedRoom = hasAnimatedCinema ? !!(payload?.animatedRoom) : false;
     const room: CinemaRoom = {
