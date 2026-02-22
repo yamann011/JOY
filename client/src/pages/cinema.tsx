@@ -768,19 +768,8 @@ export default function CinemaPage() {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                   />
-                  {/* Merkez tıklamayı engelle */}
-                  <div className="absolute inset-0 z-10" style={{
-                    bottom: showControls ? "48px" : "0",
-                    pointerEvents: "auto",
-                    background: "transparent"
-                  }} />
-                  {/* Owner: YouTube kontrol barındaki play/pause butonunu kapat (~50px sol) */}
-                  {showControls && (
-                    <div className="absolute z-10" style={{
-                      bottom: 0, left: 0, width: "52px", height: "48px",
-                      pointerEvents: "auto", background: "transparent"
-                    }} />
-                  )}
+                  {/* Tüm YouTube kontrollerini kapat — owner ve izleyici için */}
+                  <div className="absolute inset-0 z-10" style={{ pointerEvents: "auto", background: "transparent" }} />
                 </>
               ) : isDirect(videoState.videoUrl) ? (
                 <video
@@ -803,15 +792,23 @@ export default function CinemaPage() {
             <div className="flex flex-col bg-black border-t border-yellow-500/20 shrink-0">
               <div className="flex items-center gap-3 px-3 py-2">
                 {showControls ? (
-                  videoState.isPlaying ? (
-                    <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
-                      <Pause className="w-4 h-4 mr-1" /> Duraklat
+                  <>
+                    <Button onClick={() => handleSeek(Math.max(0, localTimeRef.current - 10))} size="sm" variant="ghost" className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 px-2 font-bold">
+                      ⏪ -10s
                     </Button>
-                  ) : (
-                    <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
-                      <Play className="w-4 h-4 mr-1" /> Oynat
+                    {videoState.isPlaying ? (
+                      <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
+                        <Pause className="w-4 h-4 mr-1" /> Duraklat
+                      </Button>
+                    ) : (
+                      <Button onClick={handlePlay} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
+                        <Play className="w-4 h-4 mr-1" /> Oynat
+                      </Button>
+                    )}
+                    <Button onClick={() => handleSeek(localTimeRef.current + 10)} size="sm" variant="ghost" className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 px-2 font-bold">
+                      +10s ⏩
                     </Button>
-                  )
+                  </>
                 ) : (
                   <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın</span>
                 )}
