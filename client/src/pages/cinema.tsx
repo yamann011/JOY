@@ -334,22 +334,41 @@ export default function CinemaPage() {
     if (!iframe) return;
     if (playing) {
       ytCommand(iframe, "seekTo", [Math.floor(time), true]);
-      setTimeout(() => ytCommand(iframe, "playVideo"), 100);
+      ytCommand(iframe, "unMute");
+      ytCommand(iframe, "setVolume", [100]);
+      setTimeout(() => ytCommand(iframe, "playVideo"), 150);
     } else {
       ytCommand(iframe, "pauseVideo");
     }
   };
 
-  // YouTube postMessage dinle — owner seek'ini tespit et, localTimeRef güncelle
+  // YouTube postMessage dinle — onReady, seek tespiti, localTimeRef güncel tut
   useEffect(() => {
     const handleYTMsg = (e: MessageEvent) => {
       if (!e.data || typeof e.data !== "string") return;
       try {
         const d = JSON.parse(e.data);
+
+        // YouTube player hazır → sesi aç, duruma göre oynat/duraklat
+        if (d.event === "onReady" || d.info === "ytPlayer") {
+          const iframe = iframeRef.current;
+          if (!iframe) return;
+          setTimeout(() => {
+            ytCommand(iframe, "unMute");
+            ytCommand(iframe, "setVolume", [100]);
+            if (videoStateRef.current?.isPlaying) {
+              ytCommand(iframe, "seekTo", [Math.floor(localTimeRef.current), true]);
+              setTimeout(() => ytCommand(iframe, "playVideo"), 100);
+            } else {
+              ytCommand(iframe, "pauseVideo");
+            }
+          }, 300);
+        }
+
+        // infoDelivery — owner seek tespiti + localTimeRef güncelle
         if (d.event === "infoDelivery" && d.info?.currentTime !== undefined) {
           const ct = Number(d.info.currentTime);
           const diff = Math.abs(ct - localTimeRef.current);
-          // Eğer owner ve zaman 3sn'den fazla atladıysa → seek yaptı, herkesi sync et
           if (diff > 3 && videoStateRef.current?.createdByUserId === myUserIdRef.current) {
             socketRef.current?.emit("cinema:seek", { currentTime: ct });
           }
@@ -532,16 +551,19 @@ export default function CinemaPage() {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                     onLoad={() => {
-                      // iframe yüklenince: sesi aç, duruma göre oynat/duraklat
+                      // onReady zaten hallediyor, bu sadece fallback
                       const iframe = iframeRef.current;
                       if (!iframe) return;
                       setTimeout(() => {
                         ytCommand(iframe, "unMute");
                         ytCommand(iframe, "setVolume", [100]);
-                        if (!videoStateRef.current?.isPlaying) {
+                        if (videoStateRef.current?.isPlaying) {
+                          ytCommand(iframe, "seekTo", [Math.floor(localTimeRef.current), true]);
+                          setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+                        } else {
                           ytCommand(iframe, "pauseVideo");
                         }
-                      }, 700);
+                      }, 1500);
                     }}
                   />
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
