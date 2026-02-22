@@ -220,7 +220,8 @@ export default function CinemaPage() {
   const canControlVideo = (vs?: VideoState | null) => {
     if (!user) return false;
     if (vs?.createdByUserId && String((user as any).id) === vs.createdByUserId) return true;
-    return canModerate();
+    const r = ((user as any).role || "").toLowerCase();
+    return r.includes("admin");
   };
 
   // ── Socket ──────────────────────────────────────────────────────────────────
@@ -505,13 +506,19 @@ export default function CinemaPage() {
             {/* Video alanı: mobilde 16:9 sabit oran, masaüstünde kalan alanı doldurur */}
             <div className="w-full aspect-video lg:aspect-auto lg:flex-1 relative bg-black">
               {isYouTube(videoState.videoUrl) ? (
-                <iframe
-                  ref={iframeRef}
-                  src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0, false)}
-                  className="absolute inset-0 w-full h-full"
-                  allow="autoplay; fullscreen"
-                  allowFullScreen
-                />
+                <>
+                  <iframe
+                    ref={iframeRef}
+                    src={iframeSrc || toEmbedUrl(videoState.videoUrl, 0, false)}
+                    className="absolute inset-0 w-full h-full"
+                    allow="autoplay; fullscreen"
+                    allowFullScreen
+                  />
+                  {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
+                  {!showControls && (
+                    <div className="absolute inset-0 z-10" style={{ pointerEvents: "all" }} />
+                  )}
+                </>
               ) : isDirect(videoState.videoUrl) ? (
                 <video
                   ref={videoRef}
