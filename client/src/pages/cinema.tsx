@@ -195,6 +195,8 @@ export default function CinemaPage() {
   const pendingRejoinRef = useRef<CinemaRoomInfo | null>(null); // F5 auto-rejoin
 
   const [iframeSrc, setIframeSrc] = useState("");
+  const [iframeKey, setIframeKey] = useState(0); // iframe'i zorla yeniden yükle
+  const stateReceivedAtRef = useRef<number>(0); // cinema:state ne zaman geldi
 
   const [rooms, setRooms] = useState<CinemaRoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
@@ -280,12 +282,13 @@ export default function CinemaPage() {
     });
 
     socket.on("cinema:state", (state: VideoState) => {
+      stateReceivedAtRef.current = Date.now();
       videoStateRef.current = state;
       localTimeRef.current = state.currentTime;
       setVideoState(state);
+      setIframeKey(k => k + 1); // iframe'i zorla yeniden yükle
       setCurrentRoom(prev => {
         if (prev) return { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
-        // Auto-rejoin: currentRoom henüz set edilmemişse pendingRejoinRef'ten al
         const pending = pendingRejoinRef.current;
         pendingRejoinRef.current = null;
         if (pending) return { ...pending, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
@@ -361,7 +364,7 @@ export default function CinemaPage() {
       try {
         const d = JSON.parse(e.data);
 
-        // YouTube player hazır → sesi aç, duruma göre oynat/duraklat
+        // YouTube player hazır → sesi aç, canlı pozisyondan oynat
         if (d.event === "onReady" || d.info === "ytPlayer") {
           const iframe = iframeRef.current;
           if (!iframe) return;
@@ -370,13 +373,16 @@ export default function CinemaPage() {
             ytCommand(iframe, "setVolume", [100]);
             const vs = videoStateRef.current;
             if (vs?.isPlaying) {
-              const seekTo = Math.floor(vs.currentTime ?? localTimeRef.current);
-              ytCommand(iframe, "seekTo", [seekTo, true]);
-              setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+              // State alındığından beri geçen süre — canlı pozisyon
+              const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
+              const liveTime = Math.floor((vs.currentTime ?? 0) + elapsed);
+              ytCommand(iframe, "seekTo", [liveTime, true]);
+              setTimeout(() => ytCommand(iframe, "playVideo"), 200);
             } else {
+              ytCommand(iframe, "seekTo", [Math.floor(vs?.currentTime ?? 0), true]);
               ytCommand(iframe, "pauseVideo");
             }
-          }, 400);
+          }, 300);
         }
 
         // infoDelivery — owner seek tespiti + localTimeRef güncelle
@@ -573,6 +579,7 @@ export default function CinemaPage() {
               {isYouTube(videoState.videoUrl) ? (
                 <>
                   <iframe
+                    key={iframeKey}
                     ref={iframeRef}
                     src={iframeSrc}
                     className="absolute inset-0 w-full h-full"
@@ -586,13 +593,15 @@ export default function CinemaPage() {
                         ytCommand(iframe, "setVolume", [100]);
                         const vs = videoStateRef.current;
                         if (vs?.isPlaying) {
-                          const seekTo = Math.floor(vs.currentTime ?? localTimeRef.current);
-                          ytCommand(iframe, "seekTo", [seekTo, true]);
+                          const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
+                          const liveTime = Math.floor((vs.currentTime ?? 0) + elapsed);
+                          ytCommand(iframe, "seekTo", [liveTime, true]);
                           setTimeout(() => ytCommand(iframe, "playVideo"), 200);
                         } else {
+                          ytCommand(iframe, "seekTo", [Math.floor(vs?.currentTime ?? 0), true]);
                           ytCommand(iframe, "pauseVideo");
                         }
-                      }, 1800);
+                      }, 2000);
                     }}
                   />
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}

@@ -842,6 +842,12 @@ cinemaIO.on("connection", (socket) => {
     if (!canControlVideo(room)) return;
     room.currentTime = Number(payload?.currentTime ?? room.currentTime);
     room.lastSyncAt = Date.now();
+    // İzleyicilere canlı senkronizasyon gönder (sahibi hariç)
+    socket.to(`cinema:${currentRoomId}`).emit("cinema:sync", {
+      isPlaying: true,
+      currentTime: room.currentTime,
+      by: u.username,
+    });
   });
 
   // URL değiştir (admin/mod veya oda kurucusu kontrolü)
