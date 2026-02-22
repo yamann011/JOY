@@ -17,7 +17,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { User, Announcement, UserRoleType, Banner, BannerAnimationTypeValue, EmbeddedSite } from "@shared/schema";
-import { Shield, Users, Calendar, Ticket as TicketIcon, MessageSquare, Crown, Activity, Plus, Trash2, Edit, Megaphone, Save, Image, Eye, EyeOff, ArrowUp, ArrowDown, Gamepad2, ExternalLink, Newspaper, Settings as SettingsIcon, Heart, Download } from "lucide-react";
+import { Shield, Users, Calendar, Ticket as TicketIcon, MessageSquare, Crown, Activity, Plus, Trash2, Edit, Megaphone, Save, Image, Eye, EyeOff, ArrowUp, ArrowDown, Gamepad2, ExternalLink, Newspaper, Settings as SettingsIcon, Heart, Download, Star } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Redirect } from "wouter";
 import { useAnnouncement } from "@/hooks/use-announcement";

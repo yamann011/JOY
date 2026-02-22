@@ -169,6 +169,7 @@ io.on("connection", (socket) => {
     role: string;
     level: number;
     xp: number;
+    specialPerms?: any;
   };
 
   // Ban kontrolü (guest'e dokunma)

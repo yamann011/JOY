@@ -686,7 +686,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (gifAvatar !== undefined) perms.gifAvatar = !!gifAvatar;
     if (animatedCinema !== undefined) perms.animatedCinema = !!animatedCinema;
     perms.expiresAt = expiresAt || null;
-    const user = await storage.updateUser(req.params.id, { specialPerms: perms });
+    const user = await (storage as any).updateUser(req.params.id, { specialPerms: perms });
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
     const { password: _pw, ...safe } = user as any;
     res.json(safe);
