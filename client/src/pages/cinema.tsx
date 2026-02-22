@@ -60,16 +60,35 @@ interface VideoState {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function toEmbedUrl(url: string): string {
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function toEmbedUrl(url: string, startTime = 0, autoplay = false): string {
   if (!url) return "";
-  if (url.includes("/embed/")) return url;
-  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
-  if (yt) return `https://www.youtube.com/embed/${yt[1]}?enablejsapi=1&rel=0`;
+  const ytId = extractYouTubeId(url);
+  if (ytId) {
+    const start = Math.floor(startTime);
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&start=${start}&autoplay=${autoplay ? 1 : 0}&origin=${encodeURIComponent(window.location.origin)}`;
+  }
+  // Direct video URL — use as-is (handled by <video> tag)
   return url;
 }
 
 function isYouTube(url: string) {
-  return url.includes("youtube.com") || url.includes("youtu.be");
+  return !!(extractYouTubeId(url));
+}
+
+function isDirect(url: string) {
+  return /\.(mp4|webm|ogg|m3u8)(\?.*)?$/i.test(url) || url.startsWith("blob:");
+}
+
+/** iframe'e YouTube postMessage gönder */
+function ytCommand(iframe: HTMLIFrameElement, func: string, args: unknown[] = []) {
+  try {
+    iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*");
+  } catch {}
 }
 
 function roleColor(role: string) {
@@ -291,16 +310,59 @@ export default function CinemaPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const syncIframe = useCallback((playing: boolean, time: number) => {
+  const syncIframe = useCallback((playing: boolean, time: number, forceReload = false) => {
     const iframe = iframeRef.current;
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      // HTML5 video element
+      if (Math.abs(videoEl.currentTime - time) > 2) videoEl.currentTime = time;
+      if (playing && videoEl.paused) videoEl.play().catch(() => {});
+      else if (!playing && !videoEl.paused) videoEl.pause();
+      return;
+    }
     if (!iframe) return;
-    try {
-      iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: playing ? "playVideo" : "pauseVideo", args: [] }), "*");
-      if (time >= 0) {
-        iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [time, true] }), "*");
+    if (forceReload && videoState) {
+      // iframe src'i yeniden yükle — kesin senkronizasyon
+      const url = toEmbedUrl(videoState.videoUrl, time, playing);
+      iframe.src = url;
+      return;
+    }
+    // postMessage ile seek + play/pause
+    ytCommand(iframe, "seekTo", [time, true]);
+    setTimeout(() => {
+      ytCommand(iframe, playing ? "playVideo" : "pauseVideo");
+    }, 300);
+  }, [videoState]);
+
+  // Heartbeat: oda sahibiyse her 5sn'de currentTime gönder
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    const myId = String((user as any)?.id || "");
+    if (!videoState || !currentRoom || currentRoom.createdByUserId !== myId) return;
+    heartbeatRef.current = setInterval(() => {
+      const iframe = iframeRef.current;
+      const videoEl = videoRef.current;
+      const time = videoEl?.currentTime ?? null;
+      if (time !== null) {
+        socketRef.current?.emit("cinema:heartbeat", { currentTime: time });
+      } else if (iframe) {
+        // YouTube iframe — currentTime bilinmiyor, sadece sync gönder
+        socketRef.current?.emit("cinema:heartbeat", { currentTime: videoState.currentTime });
       }
-    } catch {}
-  }, []);
+    }, 5000);
+    return () => { if (heartbeatRef.current) clearInterval(heartbeatRef.current); };
+  }, [videoState?.isPlaying, currentRoom?.id, user]);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const handlePlay = () => {
+    const time = videoRef.current?.currentTime ?? videoState?.currentTime ?? 0;
+    socketRef.current?.emit("cinema:play", { currentTime: time });
+  };
+  const handlePause = () => {
+    const time = videoRef.current?.currentTime ?? videoState?.currentTime ?? 0;
+    socketRef.current?.emit("cinema:pause", { currentTime: time });
+  };
 
   const joinRoom = (room: CinemaRoomInfo, password = "") => {
     setMessages([]); setParticipants([]);
@@ -348,8 +410,7 @@ export default function CinemaPage() {
     setMsgInput("");
   };
 
-  const handlePlay = () => socketRef.current?.emit("cinema:play", { currentTime: videoState?.currentTime ?? 0 });
-  const handlePause = () => socketRef.current?.emit("cinema:pause", { currentTime: videoState?.currentTime ?? 0 });
+
   const handleChangeUrl = () => {
     if (!newUrl.trim()) return;
     socketRef.current?.emit("cinema:change_url", { videoUrl: newUrl.trim() });
@@ -384,14 +445,14 @@ export default function CinemaPage() {
     const showControls = canControlVideo(videoState);
     return (
       <div className="flex flex-col bg-[#0a0a0a] text-white" style={{ height: "100dvh", paddingTop: `${topBarOffset + 48}px` }}>
-        {/* Top bar — fixed, hamburger + ticker altında */}
-        <div className="fixed left-0 right-0 z-40 flex items-center gap-2 pl-10 pr-44 py-2 bg-black border-b border-yellow-500/20 min-h-[48px]"
+        {/* Top bar — fixed */}
+        <div className="fixed left-0 right-0 z-40 flex items-center gap-2 pl-10 pr-2 sm:pr-44 py-2 bg-black border-b border-yellow-500/20 min-h-[48px]"
           style={{ top: `${topBarOffset}px` }}>
-          <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 w-8">
+          <Button variant="ghost" size="icon" onClick={leaveRoom} className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 h-8 w-8 shrink-0">
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <Tv2 className="w-4 h-4 text-yellow-400 shrink-0" />
-          <span className="font-bold text-base truncate text-yellow-100 flex-1">{currentRoom.name}</span>
+          <span className="font-bold text-sm sm:text-base truncate text-yellow-100 flex-1 min-w-0">{currentRoom.name}</span>
           <Badge variant="outline" className="border-yellow-500/30 text-yellow-300 text-xs shrink-0">
             <Users className="w-3 h-3 mr-1" />{currentRoom.participantCount}
           </Badge>
@@ -403,18 +464,39 @@ export default function CinemaPage() {
           )}
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        {/* Ana içerik: mobilde dikey, masaüstünde yatay */}
+        <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
           {/* Video panel */}
-          <div className="flex-1 flex flex-col bg-black min-w-0">
-            <div className="flex-1 relative">
-              {isYouTube(embedUrl) ? (
-                <iframe ref={iframeRef} src={`${embedUrl}&autoplay=0`} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen />
+          <div className="flex flex-col bg-black lg:flex-1 min-w-0 min-h-0">
+            {/* Video alanı: mobilde 16:9 sabit oran, masaüstünde kalan alanı doldurur */}
+            <div className="w-full aspect-video lg:aspect-auto lg:flex-1 relative bg-black">
+              {isYouTube(videoState.videoUrl) ? (
+                <iframe
+                  ref={iframeRef}
+                  src={`${embedUrl}&autoplay=0`}
+                  className="absolute inset-0 w-full h-full"
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                />
+              ) : isDirect(videoState.videoUrl) ? (
+                <video
+                  ref={videoRef}
+                  src={videoState.videoUrl}
+                  className="absolute inset-0 w-full h-full object-contain"
+                  playsInline
+                />
               ) : (
-                <video src={videoState.videoUrl} className="w-full h-full object-contain" />
+                <iframe
+                  ref={iframeRef}
+                  src={embedUrl}
+                  className="absolute inset-0 w-full h-full"
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                />
               )}
             </div>
             {/* Video kontrolleri */}
-            <div className="flex items-center gap-3 px-4 py-2 bg-black border-t border-yellow-500/20 shrink-0">
+            <div className="flex items-center gap-3 px-3 py-2 bg-black border-t border-yellow-500/20 shrink-0">
               {showControls ? (
                 videoState.isPlaying ? (
                   <Button onClick={handlePause} size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold h-8">
@@ -426,7 +508,7 @@ export default function CinemaPage() {
                   </Button>
                 )
               ) : (
-                <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın — kontrol oda kurucusunda</span>
+                <span className="text-xs text-yellow-500/40 italic">İzleyici modundasın</span>
               )}
               <span className="text-xs text-yellow-500/50 ml-auto">
                 {videoState.isPlaying ? "▶ Oynatılıyor" : "⏸ Duraklatıldı"}
@@ -434,12 +516,12 @@ export default function CinemaPage() {
             </div>
           </div>
 
-          {/* Chat paneli — floating chat baloncuğunun ÜSTÜNDE biter (pb-20) */}
-          <div className="w-64 sm:w-72 flex flex-col bg-[#0d0d0d] border-l border-yellow-500/15">
+          {/* Chat paneli — mobilde flex-1 (kalan alan), masaüstünde sabit genişlik */}
+          <div className="flex-1 lg:flex-none lg:w-72 flex flex-col bg-[#0d0d0d] border-t lg:border-t-0 lg:border-l border-yellow-500/15 min-h-0 overflow-hidden">
             {/* İzleyenler */}
             <div className="px-3 py-2 border-b border-yellow-500/10 shrink-0">
               <p className="text-[10px] text-yellow-500/50 font-semibold uppercase mb-1.5">İzleyenler ({participants.length})</p>
-              <div className="flex flex-wrap gap-1.5 max-h-14 overflow-y-auto">
+              <div className="flex flex-wrap gap-1.5 max-h-12 overflow-y-auto">
                 {participants.map((p, i) => {
                   const pIsOwner = currentRoom?.createdByUserId && (p as any).userId === currentRoom.createdByUserId;
                   return (
@@ -450,8 +532,8 @@ export default function CinemaPage() {
                 })}
               </div>
             </div>
-            {/* Mesajlar + Temizle başlığı */}
-            <div className="flex items-center px-3 pt-2 shrink-0">
+            {/* Mesajlar başlığı */}
+            <div className="flex items-center px-3 pt-2 pb-1 shrink-0">
               <span className="text-[10px] text-yellow-500/50 font-semibold uppercase flex-1">Sohbet</span>
               {isOwner && (
                 <button onClick={() => socketRef.current?.emit("cinema:clear_chat")}
@@ -460,7 +542,8 @@ export default function CinemaPage() {
                 </button>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2 pb-0">
+            {/* Mesajlar */}
+            <div className="flex-1 overflow-y-auto px-2 py-1 space-y-2 min-h-0">
               {messages.map(m => {
                 const msgIsOwner = currentRoom?.createdByUserId === m.userId;
                 return (
@@ -470,15 +553,15 @@ export default function CinemaPage() {
                       <span className="mr-1 text-xs leading-4">
                         <CinemaName name={m.displayName} role={m.role} isOwner={msgIsOwner} />
                       </span>
-                      <span className="text-gray-300 text-xs leading-4">{m.text}</span>
+                      <span className="text-gray-300 text-xs leading-4 break-all">{m.text}</span>
                     </div>
                   </div>
                 );
               })}
               <div ref={chatEndRef} />
             </div>
-            {/* Input — floating chat baloncuğu ile çakışmaması için mb-20 */}
-            <div className="p-2 border-t border-yellow-500/15 shrink-0 flex gap-2 mb-20">
+            {/* Input */}
+            <div className="p-2 border-t border-yellow-500/15 shrink-0 flex gap-2 pb-20 lg:pb-2">
               <Input value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") sendMsg(); }}
                 placeholder={isAuthenticated ? "Mesaj yaz..." : "Giriş gerekiyor"}
                 disabled={!isAuthenticated}
