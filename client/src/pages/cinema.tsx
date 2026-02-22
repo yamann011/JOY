@@ -319,6 +319,7 @@ export default function CinemaPage() {
         setIframeKey(k => k + 1);
         // start= state alındığı andaki pozisyon; onReady gerçek elapsed ile seek yapar
         iframeSrcSetAtRef.current = Date.now();
+        setIsMuted(true);
         setIframeSrc(toEmbedUrl(state.videoUrl,
           Math.max(0, Math.floor(state.currentTime))
         ));
@@ -364,6 +365,7 @@ export default function CinemaPage() {
             // Seek farkı büyük → iframe reload (doğru pozisyondan başlat)
             playerReadyRef.current = false;
             lastReloadTimeRef.current = Date.now();
+            setIsMuted(true);
             setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
           } else if (!isPlaying) {
             // Duraklat — her zaman gönder
@@ -378,6 +380,7 @@ export default function CinemaPage() {
               if (sinceLastReload > 5000) {
                 playerReadyRef.current = false;
                 lastReloadTimeRef.current = Date.now();
+                setIsMuted(true);
                 setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
               }
             }
@@ -539,8 +542,10 @@ export default function CinemaPage() {
       const base = videoState.currentTime;
       localTimeRef.current = base;
       localTimerRef.current = setInterval(() => {
-        localTimeRef.current = base + (Date.now() - startedAt) / 1000;
-      }, 200);
+        const t = base + (Date.now() - startedAt) / 1000;
+        localTimeRef.current = t;
+        if (!seekDraggingRef.current) setSeekSliderVal(t);
+      }, 500);
     } else {
       if (videoState) localTimeRef.current = videoState.currentTime;
     }
