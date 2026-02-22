@@ -198,6 +198,7 @@ export default function CinemaPage() {
   const [iframeSrc, setIframeSrc] = useState("");
   const [iframeKey, setIframeKey] = useState(0); // iframe'i zorla yeniden yükle
   const stateReceivedAtRef = useRef<number>(0);
+  const iframeSrcSetAtRef = useRef<number>(0);
 
   const [rooms, setRooms] = useState<CinemaRoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
@@ -266,11 +267,11 @@ export default function CinemaPage() {
           const found = data.find(r => r.id === savedRoom.id);
           if (found) {
             pendingRejoinRef.current = found;
-            // Önce temiz leave gönder, 1 saniye sonra rejoin — mobil autoplay için kritik
+            // Temiz leave gönder, 300ms sonra rejoin (daha az gecikme)
             socket.emit("cinema:leave");
             setTimeout(() => {
               socket.emit("cinema:join", { roomId: found.id, password: "" });
-            }, 1000);
+            }, 300);
           } else {
             localStorage.removeItem("cinema_last_room");
           }
@@ -316,8 +317,10 @@ export default function CinemaPage() {
         // URL değişti veya ilk yükleme → iframe sıfırla
         playerReadyRef.current = false;
         setIframeKey(k => k + 1);
+        // start= state alındığı andaki pozisyon; onReady gerçek elapsed ile seek yapar
+        iframeSrcSetAtRef.current = Date.now();
         setIframeSrc(toEmbedUrl(state.videoUrl,
-          state.isPlaying ? Math.floor(state.currentTime) + 3 : Math.floor(state.currentTime)
+          Math.max(0, Math.floor(state.currentTime))
         ));
       } else {
         // Aynı URL — sadece postMessage ile sync (iframe yeniden yüklenmesin)
@@ -447,10 +450,12 @@ export default function CinemaPage() {
           ytCommand(iframe, "unMute");
           ytCommand(iframe, "setVolume", [volumeRef.current]);
           setIsMuted(false);
-          // Doğru zamana git
+          // Doğru zamana git — iframe set edildiği andan bu yana geçen tam süreyi ekle
           const seekTarget = pendingSeekRef.current ?? vs?.currentTime ?? 0;
-          const elapsed = vs?.isPlaying ? (Date.now() - stateReceivedAtRef.current) / 1000 : 0;
-          const target = Math.floor(seekTarget + elapsed);
+          const refTime = iframeSrcSetAtRef.current || stateReceivedAtRef.current;
+          const msSinceSet = Date.now() - refTime;
+          const elapsed = vs?.isPlaying ? msSinceSet / 1000 : 0;
+          const target = Math.max(0, Math.floor(seekTarget + elapsed));
           ytCommand(iframe, "seekTo", [target, true]);
           setTimeout(() => {
             if (vs?.isPlaying) ytCommand(iframe, "playVideo");
