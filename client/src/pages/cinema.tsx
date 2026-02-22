@@ -38,6 +38,7 @@ interface CinemaRoomInfo {
   participants: { username: string; displayName: string; role: string }[];
   createdBy: string;
   createdByUserId: string;
+  creatorRole?: string;
   createdAt: number;
   roomImage?: string;
   animatedRoom?: boolean;
@@ -191,6 +192,7 @@ export default function CinemaPage() {
   const socketRef = useRef<Socket | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const pendingRejoinRef = useRef<CinemaRoomInfo | null>(null); // F5 auto-rejoin
 
   const [iframeSrc, setIframeSrc] = useState("");
 
@@ -245,6 +247,20 @@ export default function CinemaPage() {
 
     socket.on("cinema:rooms", (data: CinemaRoomInfo[]) => {
       setRooms(data);
+      // F5 koruması — son odaya otomatik geri katıl
+      try {
+        const saved = localStorage.getItem("cinema_last_room");
+        if (saved) {
+          const savedRoom: CinemaRoomInfo = JSON.parse(saved);
+          const found = data.find(r => r.id === savedRoom.id);
+          if (found) {
+            pendingRejoinRef.current = found; // cinema:state handler bunu kullanacak
+            socket.emit("cinema:join", { roomId: found.id, password: "" });
+          } else {
+            localStorage.removeItem("cinema_last_room");
+          }
+        }
+      } catch {}
     });
     socket.on("cinema:room_added", (room: CinemaRoomInfo) =>
       setRooms(prev => [...prev.filter(r => r.id !== room.id), room])
@@ -265,9 +281,16 @@ export default function CinemaPage() {
 
     socket.on("cinema:state", (state: VideoState) => {
       videoStateRef.current = state;
-      localTimeRef.current = state.currentTime; // Doğru pozisyonu kaydet
+      localTimeRef.current = state.currentTime;
       setVideoState(state);
-      setCurrentRoom(prev => prev ? { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying } : prev);
+      setCurrentRoom(prev => {
+        if (prev) return { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
+        // Auto-rejoin: currentRoom henüz set edilmemişse pendingRejoinRef'ten al
+        const pending = pendingRejoinRef.current;
+        pendingRejoinRef.current = null;
+        if (pending) return { ...pending, videoUrl: state.videoUrl, isPlaying: state.isPlaying };
+        return prev;
+      });
       setIframeSrc(toEmbedUrl(state.videoUrl, Math.floor(state.currentTime)));
     });
 
@@ -776,7 +799,17 @@ export default function CinemaPage() {
                   <CardTitle className="text-yellow-100 flex items-center gap-2 text-base">
                     {room.hasPassword && <Lock className="w-4 h-4 text-yellow-400 shrink-0" />}
                     {room.animatedRoom && <span className="text-purple-400">✨</span>}
-                    <span className="truncate">{room.name}</span>
+                    {(room.creatorRole || "").toUpperCase() === "VIP" ? (
+                      <>
+                        <style>{`@keyframes vipRoomName{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}`}</style>
+                        <span
+                          className="truncate font-black bg-gradient-to-r from-blue-300 via-white to-blue-400 bg-clip-text text-transparent bg-[length:200%_auto]"
+                          style={{ animation: "vipRoomName 2.5s ease-in-out infinite" }}
+                        >{room.name}</span>
+                      </>
+                    ) : (
+                      <span className="truncate">{room.name}</span>
+                    )}
                   </CardTitle>
                   <p className="text-yellow-500/40 text-xs">{room.createdBy} tarafından</p>
                 </CardHeader>

@@ -569,10 +569,11 @@ interface CinemaRoom {
   passwordHash?: string;
   videoUrl: string;
   currentTime: number;
-  lastSyncAt: number; // server timestamp — elapsed time hesabı için
+  lastSyncAt: number;
   isPlaying: boolean;
   createdBy: string;
   createdByUserId: string;
+  creatorRole?: string;
   createdAt: number;
   roomImage?: string;
   animatedRoom?: boolean;
@@ -661,6 +662,7 @@ cinemaIO.on("connection", (socket) => {
     participants: Array.from(r.participants.values()),
     createdBy: r.createdBy,
     createdByUserId: r.createdByUserId,
+    creatorRole: r.creatorRole,
     createdAt: r.createdAt,
     roomImage: r.roomImage,
     animatedRoom: r.animatedRoom,
@@ -711,6 +713,7 @@ cinemaIO.on("connection", (socket) => {
       isPlaying: false,
       createdBy: u.displayName,
       createdByUserId: u.userId,
+      creatorRole: dbUserRole,
       createdAt: Date.now(),
       roomImage,
       animatedRoom,
@@ -730,6 +733,7 @@ cinemaIO.on("connection", (socket) => {
       participants: [],
       createdBy: room.createdBy,
       createdByUserId: room.createdByUserId,
+      creatorRole: room.creatorRole,
       createdAt: room.createdAt,
       roomImage: room.roomImage,
       animatedRoom: room.animatedRoom,
