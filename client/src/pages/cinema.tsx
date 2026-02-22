@@ -197,11 +197,12 @@ export default function CinemaPage() {
 
   const [iframeSrc, setIframeSrc] = useState("");
   const [iframeKey, setIframeKey] = useState(0); // iframe'i zorla yeniden yükle
-  const stateReceivedAtRef = useRef<number>(0); // cinema:state ne zaman geldi
+  const stateReceivedAtRef = useRef<number>(0);
 
   const [rooms, setRooms] = useState<CinemaRoomInfo[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CinemaRoomInfo | null>(null);
   const [videoState, setVideoState] = useState<VideoState | null>(null);
+  const [needsClickToPlay, setNeedsClickToPlay] = useState(false); // autoplay engeli overlay
   const [messages, setMessages] = useState<CinemaMsg[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [participants, setParticipants] = useState<{ username: string; displayName: string; role: string }[]>([]);
@@ -284,7 +285,8 @@ export default function CinemaPage() {
 
     socket.on("cinema:state", (state: VideoState) => {
       stateReceivedAtRef.current = Date.now();
-      playerReadyRef.current = false; // Yeni iframe yükleniyor, henüz hazır değil
+      playerReadyRef.current = false;
+      setNeedsClickToPlay(false);
       videoStateRef.current = state;
       localTimeRef.current = state.currentTime;
       setVideoState(state);
@@ -370,6 +372,7 @@ export default function CinemaPage() {
         // YouTube player hazır → sesi aç, canlı pozisyondan oynat
         if (d.event === "onReady" || d.info === "ytPlayer") {
           playerReadyRef.current = true;
+          setNeedsClickToPlay(false);
           const iframe = iframeRef.current;
           if (!iframe) return;
           setTimeout(() => {
@@ -377,7 +380,6 @@ export default function CinemaPage() {
             ytCommand(iframe, "setVolume", [100]);
             const vs = videoStateRef.current;
             if (vs?.isPlaying) {
-              // State alındığından beri geçen süre — canlı pozisyon
               const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
               const liveTime = Math.floor((vs.currentTime ?? 0) + elapsed);
               ytCommand(iframe, "seekTo", [liveTime, true]);
@@ -387,6 +389,33 @@ export default function CinemaPage() {
               ytCommand(iframe, "pauseVideo");
             }
           }, 300);
+        }
+
+        // YouTube oynat/duraklat durumu değişti
+        if (d.event === "onStateChange") {
+          const ytState = Number(d.info);
+          const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
+          if (ytState === 1) {
+            // Oynatıldı
+            setNeedsClickToPlay(false);
+            if (isOwner && !videoStateRef.current?.isPlaying) {
+              // Owner YouTube butonundan başlattı → herkese yayınla
+              socketRef.current?.emit("cinema:play", { currentTime: localTimeRef.current });
+            }
+          } else if (ytState === 2) {
+            // Duraklatıldı
+            if (isOwner && videoStateRef.current?.isPlaying) {
+              socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
+            } else if (!isOwner && videoStateRef.current?.isPlaying) {
+              // İzleyicinin videosu durdu (autoplay engeli vb.) → overlay göster
+              setNeedsClickToPlay(true);
+            }
+          } else if (ytState === -1 || ytState === 5) {
+            // Başlamamış / cued → oynatmayı dene
+            if (videoStateRef.current?.isPlaying) {
+              setNeedsClickToPlay(true);
+            }
+          }
         }
 
         // infoDelivery — owner seek tespiti + localTimeRef güncelle
@@ -611,6 +640,29 @@ export default function CinemaPage() {
                   {/* Kontrol yetkisi olmayanların YouTube player'a tıklamasını engelle */}
                   {!showControls && (
                     <div className="absolute inset-0 z-10" style={{ pointerEvents: "all" }} />
+                  )}
+                  {/* Autoplay engeli overlay — tıklanınca oynat */}
+                  {needsClickToPlay && videoState.isPlaying && (
+                    <div
+                      className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 cursor-pointer"
+                      onClick={() => {
+                        const iframe = iframeRef.current;
+                        if (!iframe) return;
+                        const elapsed = (Date.now() - stateReceivedAtRef.current) / 1000;
+                        const liveTime = Math.floor((videoStateRef.current?.currentTime ?? 0) + elapsed);
+                        ytCommand(iframe, "unMute");
+                        ytCommand(iframe, "setVolume", [100]);
+                        ytCommand(iframe, "seekTo", [liveTime, true]);
+                        setTimeout(() => ytCommand(iframe, "playVideo"), 100);
+                        setNeedsClickToPlay(false);
+                      }}
+                    >
+                      <div className="w-16 h-16 rounded-full bg-yellow-500/90 flex items-center justify-center mb-3 shadow-lg">
+                        <Play className="w-8 h-8 text-black ml-1" />
+                      </div>
+                      <p className="text-white font-bold text-lg">Devam etmek için tıkla</p>
+                      <p className="text-white/60 text-sm mt-1">Canlı yayın aktif</p>
+                    </div>
                   )}
                 </>
               ) : isDirect(videoState.videoUrl) ? (
