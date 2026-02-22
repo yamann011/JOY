@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/lib/auth-context";
 import { useAnnouncement } from "@/hooks/use-announcement";
@@ -274,8 +274,13 @@ export default function CinemaPage() {
     });
 
     socket.on("cinema:state", (state: VideoState) => {
+      videoStateRef.current = state;
       setVideoState(state);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl: state.videoUrl, isPlaying: state.isPlaying } : prev);
+      // Odaya katılırken video oynatılıyorsa doğru zamandan başlat
+      if (state.isPlaying) {
+        setTimeout(() => syncIframeFnRef.current?.(state.isPlaying, state.currentTime), 800);
+      }
     });
 
     socket.on("cinema:messages_init", (msgs: CinemaMsg[]) => setMessages(msgs));
@@ -283,9 +288,14 @@ export default function CinemaPage() {
     socket.on("cinema:chat_cleared", () => setMessages([]));
 
     socket.on("cinema:sync", ({ isPlaying, currentTime }: { isPlaying: boolean; currentTime: number; by: string }) => {
+      videoStateRef.current = videoStateRef.current ? { ...videoStateRef.current, isPlaying, currentTime } : videoStateRef.current;
       setVideoState(prev => prev ? { ...prev, isPlaying, currentTime } : prev);
       setCurrentRoom(prev => prev ? { ...prev, isPlaying } : prev);
-      syncIframe(isPlaying, currentTime);
+      // Oda sahibinin iframe'i yeniden yüklenmez — o zaten kontrolü yapan kişi
+      const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
+      if (!isOwner) {
+        syncIframeFnRef.current?.(isPlaying, currentTime);
+      }
     });
 
     socket.on("cinema:url_changed", ({ videoUrl, by }: { videoUrl: string; by: string }) => {
@@ -310,29 +320,27 @@ export default function CinemaPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const syncIframe = useCallback((playing: boolean, time: number, forceReload = false) => {
+  // syncIframe — ref pattern ile stale closure yok, her render'da güncellenir
+  const syncIframeFnRef = useRef<(playing: boolean, time: number) => void>();
+  syncIframeFnRef.current = (playing: boolean, time: number) => {
     const iframe = iframeRef.current;
     const videoEl = videoRef.current;
+    const vs = videoStateRef.current;
     if (videoEl) {
-      // HTML5 video element
-      if (Math.abs(videoEl.currentTime - time) > 2) videoEl.currentTime = time;
+      if (Math.abs(videoEl.currentTime - time) > 1.5) videoEl.currentTime = time;
       if (playing && videoEl.paused) videoEl.play().catch(() => {});
       else if (!playing && !videoEl.paused) videoEl.pause();
       return;
     }
-    if (!iframe) return;
-    if (forceReload && videoState) {
-      // iframe src'i yeniden yükle — kesin senkronizasyon
-      const url = toEmbedUrl(videoState.videoUrl, time, playing);
-      iframe.src = url;
-      return;
+    if (!iframe || !vs) return;
+    if (playing) {
+      // iframe src'i doğru zaman + autoplay=1 ile yenile — en güvenilir sync yöntemi
+      const newSrc = toEmbedUrl(vs.videoUrl, Math.floor(time), true);
+      iframe.src = newSrc;
+    } else {
+      ytCommand(iframe, "pauseVideo");
     }
-    // postMessage ile seek + play/pause
-    ytCommand(iframe, "seekTo", [time, true]);
-    setTimeout(() => {
-      ytCommand(iframe, playing ? "playVideo" : "pauseVideo");
-    }, 300);
-  }, [videoState]);
+  };
 
   // Heartbeat: oda sahibiyse her 5sn'de currentTime gönder
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -341,26 +349,44 @@ export default function CinemaPage() {
     const myId = String((user as any)?.id || "");
     if (!videoState || !currentRoom || currentRoom.createdByUserId !== myId) return;
     heartbeatRef.current = setInterval(() => {
-      const iframe = iframeRef.current;
       const videoEl = videoRef.current;
-      const time = videoEl?.currentTime ?? null;
-      if (time !== null) {
-        socketRef.current?.emit("cinema:heartbeat", { currentTime: time });
-      } else if (iframe) {
-        // YouTube iframe — currentTime bilinmiyor, sadece sync gönder
-        socketRef.current?.emit("cinema:heartbeat", { currentTime: videoState.currentTime });
-      }
+      const time = videoEl?.currentTime ?? localTimeRef.current;
+      socketRef.current?.emit("cinema:heartbeat", { currentTime: time });
     }, 5000);
     return () => { if (heartbeatRef.current) clearInterval(heartbeatRef.current); };
   }, [videoState?.isPlaying, currentRoom?.id, user]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Refs for stale-closure-free sync
+  const videoStateRef = useRef<VideoState | null>(null);
+  const localTimeRef = useRef(0);
+  const localTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const myUserIdRef = useRef(String((user as any)?.id || ""));
+  useEffect(() => { videoStateRef.current = videoState; }, [videoState]);
+  useEffect(() => { myUserIdRef.current = String((user as any)?.id || ""); }, [user]);
+
+  // Local time tracker — YouTube iframe'den currentTime okunamadığı için client-side takip
+  useEffect(() => {
+    if (localTimerRef.current) clearInterval(localTimerRef.current);
+    if (videoState?.isPlaying) {
+      const startedAt = Date.now();
+      const base = videoState.currentTime;
+      localTimeRef.current = base;
+      localTimerRef.current = setInterval(() => {
+        localTimeRef.current = base + (Date.now() - startedAt) / 1000;
+      }, 200);
+    } else {
+      if (videoState) localTimeRef.current = videoState.currentTime;
+    }
+    return () => { if (localTimerRef.current) clearInterval(localTimerRef.current); };
+  }, [videoState?.isPlaying, videoState?.currentTime]);
+
   const handlePlay = () => {
-    const time = videoRef.current?.currentTime ?? videoState?.currentTime ?? 0;
+    const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:play", { currentTime: time });
   };
   const handlePause = () => {
-    const time = videoRef.current?.currentTime ?? videoState?.currentTime ?? 0;
+    const time = videoRef.current?.currentTime ?? localTimeRef.current;
     socketRef.current?.emit("cinema:pause", { currentTime: time });
   };
 
