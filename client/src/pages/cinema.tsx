@@ -460,6 +460,10 @@ export default function CinemaPage() {
           const elapsed = vs?.isPlaying ? msSinceSet / 1000 : 0;
           const target = Math.max(0, Math.floor(seekTarget + elapsed));
           ytCommand(iframe, "seekTo", [target, true]);
+          // YouTube'dan süre ve anlık bilgi iste (slider max için)
+          try {
+            iframe.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: 1 }), "*");
+          } catch {}
           setTimeout(() => {
             if (vs?.isPlaying) ytCommand(iframe, "playVideo");
             else ytCommand(iframe, "pauseVideo");
@@ -471,15 +475,20 @@ export default function CinemaPage() {
           const ytState = Number(d.info);
           const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
           if (ytState === 1) {
-            // Oynatıldı
+            // Oynatıldı — UI butonunu güncelle
             setNeedsClickToPlay(false);
-            if (isOwner && !videoStateRef.current?.isPlaying) {
-              // Owner YouTube butonundan başlattı → herkese yayınla
+            setVideoState(prev => prev ? { ...prev, isPlaying: true } : prev);
+            if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: true };
+            if (isOwner && !syncWasPlayingRef.current) {
+              syncWasPlayingRef.current = true;
               socketRef.current?.emit("cinema:play", { currentTime: localTimeRef.current });
             }
           } else if (ytState === 2) {
-            // Duraklatıldı
-            if (isOwner && videoStateRef.current?.isPlaying) {
+            // Duraklatıldı — UI butonunu güncelle
+            setVideoState(prev => prev ? { ...prev, isPlaying: false } : prev);
+            if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: false };
+            if (isOwner && syncWasPlayingRef.current) {
+              syncWasPlayingRef.current = false;
               socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
             } else if (!isOwner && videoStateRef.current?.isPlaying && playerReadyRef.current) {
               // İzleyici videosu durdu → sadece 1 kez tekrar oynat (sonsuz döngü olmasın)
