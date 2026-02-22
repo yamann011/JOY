@@ -47,8 +47,9 @@ const features = [
   },
   {
     icon: Shield,
-    title: "Guvenli Platform",
+    title: "MOD CLUB",
     description: "Moderator destekli guvenli ortam",
+    animated: true,
   },
 ];
 
@@ -770,13 +771,31 @@ export default function Home() {
               {features.map((feature, index) => (
                 <Card
                   key={index}
-                  className="p-6 border-t-2 border-t-primary/50 hover-elevate transition-all duration-300"
+                  className={`p-6 border-t-2 hover-elevate transition-all duration-300 ${(feature as any).animated ? "border-t-yellow-400 bg-gradient-to-br from-black to-gray-900" : "border-t-primary/50"}`}
                   data-testid={`feature-card-${index}`}
                 >
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-primary" />
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${(feature as any).animated ? "bg-yellow-400/10" : "bg-primary/10"}`}>
+                    <feature.icon className={`w-6 h-6 ${(feature as any).animated ? "text-yellow-400" : "text-primary"}`} />
                   </div>
-                  <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
+                  {(feature as any).animated ? (
+                    <>
+                      <style>{`
+                        @keyframes modClubShimmer {
+                          0%   { background-position: 0% 50%; text-shadow: 0 0 8px #facc15; }
+                          50%  { background-position: 100% 50%; text-shadow: 0 0 18px #fbbf24, 0 0 30px rgba(250,204,21,0.4); }
+                          100% { background-position: 0% 50%; text-shadow: 0 0 8px #facc15; }
+                        }
+                      `}</style>
+                      <h3
+                        className="text-lg font-black mb-2 tracking-widest bg-gradient-to-r from-yellow-300 via-black to-yellow-400 bg-clip-text text-transparent bg-[length:200%_auto]"
+                        style={{ animation: "modClubShimmer 2.5s ease-in-out infinite" }}
+                      >
+                        MOD CLUB
+                      </h3>
+                    </>
+                  ) : (
+                    <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
+                  )}
                   <p className="text-sm text-muted-foreground">{feature.description}</p>
                 </Card>
               ))}

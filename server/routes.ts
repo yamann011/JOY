@@ -676,20 +676,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.patch("/api/admin/users/:id/special-perms", requireAuth, async (req, res) => {
-    const currentUser = await storage.getUser(req.userId!);
-    if (!isAdmin(currentUser?.role)) {
-      return res.status(403).json({ message: "Yetkisiz erişim" });
+    try {
+      const currentUser = await storage.getUser(req.userId!);
+      if (!isAdmin(currentUser?.role)) {
+        return res.status(403).json({ message: "Yetkisiz erişim" });
+      }
+      const { animatedName, gifAvatar, animatedCinema, expiresAt } = req.body;
+      const perms: Record<string, any> = {
+        animatedName: !!animatedName,
+        gifAvatar: !!gifAvatar,
+        animatedCinema: !!animatedCinema,
+        expiresAt: expiresAt || null,
+      };
+      const storage2 = storage as any;
+      const user = await storage2.updateUser(String(req.params.id), { specialPerms: perms });
+      if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+      const { password: _pw, ...safe } = user as any;
+      return res.json(safe);
+    } catch (err: any) {
+      console.error("[special-perms] hata:", err);
+      return res.status(500).json({ message: err?.message || "Sunucu hatası" });
     }
-    const { animatedName, gifAvatar, animatedCinema, expiresAt } = req.body;
-    const perms: Record<string, any> = {};
-    if (animatedName !== undefined) perms.animatedName = !!animatedName;
-    if (gifAvatar !== undefined) perms.gifAvatar = !!gifAvatar;
-    if (animatedCinema !== undefined) perms.animatedCinema = !!animatedCinema;
-    perms.expiresAt = expiresAt || null;
-    const user = await (storage as any).updateUser(req.params.id, { specialPerms: perms });
-    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
-    const { password: _pw, ...safe } = user as any;
-    res.json(safe);
   });
 
   app.get("/api/settings/film", requireAuth, async (req, res) => {
