@@ -374,6 +374,13 @@ export default function CinemaPage() {
             lastReloadTimeRef.current = Date.now();
             setIsMuted(true);
             setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
+          } else if (timeDiff > 1.5 && iframe && playerReadyRef.current) {
+            // Seek farkı orta → seekTo ile anında konuma git
+            seekingByUsRef.current = true;
+            setTimeout(() => { seekingByUsRef.current = false; }, 2000);
+            ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
+            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 150);
+            else ytCommand(iframe, "pauseVideo");
           } else if (!isPlaying) {
             // Duraklat — her zaman gönder
             if (iframe) ytCommand(iframe, "pauseVideo");
