@@ -368,21 +368,22 @@ export default function CinemaPage() {
           const iframe = iframeRef.current;
           const timeDiff = Math.abs(localTimeRef.current - currentTime);
 
-          if (isSeeked && iframe && playerReadyRef.current) {
-            // Owner seek yaptı → timeDiff'e bakmadan anında seekTo, ses koru
+          if (isSeeked && iframe) {
+            // Owner seek yaptı → playerReady'ye bakmadan anında seekTo, ses koru
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
+            if (!playerReadyRef.current) playerReadyRef.current = true;
             ytCommand(iframe, "seekTo", [Math.floor(currentTime), true]);
             ytCommand(iframe, "unMute");
             ytCommand(iframe, "setVolume", [volumeRef.current || 100]);
-            if (isPlaying) setTimeout(() => ytCommand(iframe, "playVideo"), 50);
+            if (isPlaying) setTimeout(() => { ytCommand(iframe, "playVideo"); ytCommand(iframe, "unMute"); }, 50);
             else ytCommand(iframe, "pauseVideo");
-          } else if (isSeeked || timeDiff > 8) {
-            // Seek farkı çok büyük → iframe reload
+          } else if (timeDiff > 12) {
+            // Çok büyük fark → iframe reload (son çare)
             playerReadyRef.current = false;
             lastReloadTimeRef.current = Date.now();
             setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
-          } else if (timeDiff > 0.5 && iframe && playerReadyRef.current) {
+          } else if (timeDiff > 0.5 && iframe) {
             // Drift düzelt → seekTo, ses koru
             seekingByUsRef.current = true;
             setTimeout(() => { seekingByUsRef.current = false; }, 2000);
@@ -515,30 +516,39 @@ export default function CinemaPage() {
           const ytState = Number(d.info);
           const isOwner = videoStateRef.current?.createdByUserId === myUserIdRef.current;
           if (ytState === 1) {
-            // Oynatıldı — UI butonunu güncelle
+            // Oynatıldı
             setNeedsClickToPlay(false);
-            setVideoState(prev => prev ? { ...prev, isPlaying: true } : prev);
-            if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: true };
-            if (isOwner && !syncWasPlayingRef.current) {
-              syncWasPlayingRef.current = true;
-              socketRef.current?.emit("cinema:play", { currentTime: localTimeRef.current });
+            // Ses her zaman aç — seek/buffer sonrası YouTube sesi kapatmış olabilir
+            const iframe = iframeRef.current;
+            if (iframe) { ytCommand(iframe, "unMute"); ytCommand(iframe, "setVolume", [volumeRef.current || 100]); }
+            if (isOwner) {
+              setVideoState(prev => prev ? { ...prev, isPlaying: true } : prev);
+              if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: true };
+              if (!syncWasPlayingRef.current) {
+                syncWasPlayingRef.current = true;
+                socketRef.current?.emit("cinema:play", { currentTime: localTimeRef.current });
+              }
             }
           } else if (ytState === 2) {
-            // Duraklatıldı — UI butonunu güncelle
-            setVideoState(prev => prev ? { ...prev, isPlaying: false } : prev);
-            if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: false };
-            if (isOwner && syncWasPlayingRef.current) {
-              syncWasPlayingRef.current = false;
-              socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
-            } else if (!isOwner && videoStateRef.current?.isPlaying && playerReadyRef.current) {
-              // İzleyici videosu durdu → sadece 1 kez tekrar oynat (sonsuz döngü olmasın)
+            // Duraklatıldı
+            if (isOwner) {
+              // Owner duraklattı → state güncelle + server'a bildir
+              setVideoState(prev => prev ? { ...prev, isPlaying: false } : prev);
+              if (videoStateRef.current) videoStateRef.current = { ...videoStateRef.current, isPlaying: false };
+              if (syncWasPlayingRef.current) {
+                syncWasPlayingRef.current = false;
+                socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
+              }
+            } else if (syncWasPlayingRef.current && playerReadyRef.current) {
+              // İzleyici videosu beklenmedik şekilde durdu → hemen kurtarma
+              // NOT: videoStateRef.current.isPlaying'e bakma — ytState=2 gelince o zaten false oluyor
               const iframe = iframeRef.current;
-              if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 500);
+              if (iframe) setTimeout(() => { ytCommand(iframe, "playVideo"); }, 80);
             }
           } else if (ytState === -1 || ytState === 5) {
-            if (videoStateRef.current?.isPlaying) {
+            if (syncWasPlayingRef.current) {
               const iframe = iframeRef.current;
-              if (iframe) [500, 1200].forEach(d => setTimeout(() => ytCommand(iframe, "playVideo"), d));
+              if (iframe) [300, 800].forEach(d => setTimeout(() => ytCommand(iframe, "playVideo"), d));
             }
           }
         }
