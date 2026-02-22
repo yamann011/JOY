@@ -341,21 +341,17 @@ export default function CinemaPage() {
               // Oynat: sadece şu durumlarda iframe reload et:
               // 1) Oynat/duraklat geçişi (paused → playing)
               // 2) Seek farkı 8 saniyeden fazla
-              // 3) Son reload üzerinden 10 saniye geçmiş VE player hazır değil
               const timeDiff = Math.abs(localTimeRef.current - currentTime);
-              const now = Date.now();
-              const sinceLastReload = now - lastReloadTimeRef.current;
               const needsReload =
-                (!prevIsPlaying && isPlaying) ||        // geçiş
-                (timeDiff > 8) ||                        // seek
-                (!playerReadyRef.current && sinceLastReload > 10000); // player hazır değil
+                (!prevIsPlaying && isPlaying) ||   // geçiş
+                (timeDiff > 8);                     // seek
 
               if (needsReload) {
                 playerReadyRef.current = false;
-                lastReloadTimeRef.current = now;
+                lastReloadTimeRef.current = Date.now();
                 setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
               }
-              // Zaten oynuyorsa ve player hazırsa → hiçbir şey yapma (heartbeat güncellemesi)
+              // Zaten oynuyorsa → hiçbir şey yapma (heartbeat güncellemesi)
             }
           }
         }
@@ -415,7 +411,7 @@ export default function CinemaPage() {
       try {
         const d = JSON.parse(e.data);
 
-        // YouTube player hazır → sessiz autoplay zaten başladı, sadece ses aç
+        // YouTube player hazır → sessiz autoplay başladı
         if (d.event === "onReady" || d.info === "ytPlayer") {
           playerReadyRef.current = true;
           setNeedsClickToPlay(false);
@@ -423,16 +419,9 @@ export default function CinemaPage() {
           if (!iframe) return;
           const vs = videoStateRef.current;
           if (vs?.isPlaying) {
-            // seekTo YAPTIRMIYORUZ — mobilde video duraklıyor
-            // autoplay=1&mute=1&start=X+5 ile video zaten doğru yerden başladı
-            // Sadece sesi aç (birden fazla deneme — mobil bazen gecikir)
-            [100, 600, 1400].forEach(delay =>
-              setTimeout(() => {
-                ytCommand(iframe, "unMute");
-                ytCommand(iframe, "setVolume", [100]);
-                setIsMuted(false);
-              }, delay)
-            );
+            // Mobilde unMute postMessage videoyu durdurabiliyor.
+            // Video zaten mute=1 ile başladı → "Sesi Aç" butonu göster, kullanıcı bassın
+            setIsMuted(true);
           } else {
             ytCommand(iframe, "pauseVideo");
           }
@@ -454,11 +443,9 @@ export default function CinemaPage() {
             if (isOwner && videoStateRef.current?.isPlaying) {
               socketRef.current?.emit("cinema:pause", { currentTime: localTimeRef.current });
             } else if (!isOwner && videoStateRef.current?.isPlaying && playerReadyRef.current) {
-              // İzleyici videosu durdu → sessizce tekrar oynat (retry)
+              // İzleyici videosu durdu → sadece 1 kez tekrar oynat (sonsuz döngü olmasın)
               const iframe = iframeRef.current;
-              if (iframe) {
-                [400, 1000, 2000].forEach(d => setTimeout(() => ytCommand(iframe, "playVideo"), d));
-              }
+              if (iframe) setTimeout(() => ytCommand(iframe, "playVideo"), 500);
             }
           } else if (ytState === -1 || ytState === 5) {
             if (videoStateRef.current?.isPlaying) {
