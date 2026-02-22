@@ -267,16 +267,27 @@ export default function CinemaPage() {
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      // Sayfa yenilenince 500ms içinde son odaya otomatik geri katıl
+      // Sayfa yenilenince son odaya otomatik geri katıl
       try {
         const saved = localStorage.getItem("cinema_last_room");
-        if (saved) {
-          const savedRoom: CinemaRoomInfo = JSON.parse(saved);
-          pendingRejoinRef.current = savedRoom;
-          setTimeout(() => {
-            socket.emit("cinema:join", { roomId: savedRoom.id, password: savedRoom._savedPassword || "" });
-          }, 500);
+        if (!saved) return;
+        const savedRoom: CinemaRoomInfo = JSON.parse(saved);
+        const myId = String((user as any)?.id || "");
+        const isOwnerOfRoom = savedRoom.createdByUserId === myId;
+        // İzleyici manuel yenileme yaptıysa otomatik rejoin yapma
+        const wasManualRefresh = sessionStorage.getItem("cinema_viewer_manual_refresh") === "1";
+        if (wasManualRefresh) {
+          sessionStorage.removeItem("cinema_viewer_manual_refresh");
+          if (!isOwnerOfRoom) {
+            // İzleyici kasıtlı yeniledi → odadan çık, rejoin yok
+            localStorage.removeItem("cinema_last_room");
+            return;
+          }
         }
+        pendingRejoinRef.current = savedRoom;
+        setTimeout(() => {
+          socket.emit("cinema:join", { roomId: savedRoom.id, password: savedRoom._savedPassword || "" });
+        }, 500);
       } catch {}
     });
 
@@ -615,6 +626,51 @@ export default function CinemaPage() {
   const myUserIdRef = useRef(String((user as any)?.id || ""));
   useEffect(() => { videoStateRef.current = videoState; }, [videoState]);
   useEffect(() => { myUserIdRef.current = String((user as any)?.id || ""); }, [user]);
+
+  // Manuel yenileme tespiti + izleyici refresh engeli
+  useEffect(() => {
+    if (!currentRoom) return;
+    const myId = String((user as any)?.id || "");
+    const isOwner = currentRoom.createdByUserId === myId;
+
+    // pagehide: persisted=false → gerçek unload (manuel yenileme veya sekme kapatma)
+    //           persisted=true  → bfcache (mobil arka plan → auto-rejoin yapılsın)
+    const onPageHide = (e: PageTransitionEvent) => {
+      if (!e.persisted && !isOwner) {
+        // İzleyici sayfayı kapatıyor/yeniliyor → rejoin engellensin
+        try { sessionStorage.setItem("cinema_viewer_manual_refresh", "1"); } catch {}
+      }
+    };
+
+    // İzleyici için F5 / Ctrl+R / Cmd+R engelle
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isOwner) return;
+      const isF5 = e.key === "F5" || e.keyCode === 116;
+      const isCtrlR = (e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R" || e.keyCode === 82);
+      if (isF5 || isCtrlR) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    // İzleyici sekme kapatmak/yenilemek isterse uyarı göster
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isOwner) return;
+      e.preventDefault();
+      e.returnValue = "Odadan çıkmak istediğinizden emin misiniz?";
+      return e.returnValue;
+    };
+
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [currentRoom, user]);
 
   // Local time tracker — YouTube iframe'den currentTime okunamadığı için client-side takip
   useEffect(() => {
