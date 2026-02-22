@@ -68,12 +68,13 @@ function extractYouTubeId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-function toEmbedUrl(url: string, startTime = 0, _autoplay = false): string {
+function toEmbedUrl(url: string, startTime = 0, autoplay = false): string {
   if (!url) return "";
   const ytId = extractYouTubeId(url);
   if (ytId) {
     const start = Math.floor(startTime);
-    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=0&start=${start}&autoplay=1&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
+    const ap = autoplay ? 1 : 0;
+    return `https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&controls=0&start=${start}&autoplay=${ap}&mute=1&origin=${encodeURIComponent(window.location.origin)}`;
   }
   return url;
 }
@@ -323,7 +324,8 @@ export default function CinemaPage() {
         iframeSrcSetAtRef.current = Date.now();
         setIsMuted(true);
         setIframeSrc(toEmbedUrl(state.videoUrl,
-          Math.max(0, Math.floor(state.currentTime))
+          Math.max(0, Math.floor(state.currentTime)),
+          state.isPlaying
         ));
       } else {
         // Aynı URL — sadece postMessage ile sync (iframe yeniden yüklenmesin)
@@ -368,7 +370,7 @@ export default function CinemaPage() {
             playerReadyRef.current = false;
             lastReloadTimeRef.current = Date.now();
             setIsMuted(true);
-            setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
+            setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
           } else if (!isPlaying) {
             // Duraklat — her zaman gönder
             if (iframe) ytCommand(iframe, "pauseVideo");
@@ -383,7 +385,7 @@ export default function CinemaPage() {
                 playerReadyRef.current = false;
                 lastReloadTimeRef.current = Date.now();
                 setIsMuted(true);
-                setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1))));
+                setIframeSrc(toEmbedUrl(url, Math.max(0, Math.floor(currentTime + 1)), isPlaying));
               }
             }
           }
@@ -394,7 +396,7 @@ export default function CinemaPage() {
     socket.on("cinema:url_changed", ({ videoUrl, by }: { videoUrl: string; by: string }) => {
       setVideoState(prev => prev ? { ...prev, videoUrl, currentTime: 0, isPlaying: false } : prev);
       setCurrentRoom(prev => prev ? { ...prev, videoUrl } : prev);
-      setIframeSrc(toEmbedUrl(videoUrl, 0));
+      setIframeSrc(toEmbedUrl(videoUrl, 0, false));
       toast({ title: `${by} videoyu değiştirdi` });
     });
 
