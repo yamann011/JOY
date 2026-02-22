@@ -54,19 +54,21 @@ type DmConvo = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function roleBadge(role?: string) {
   const r = (role || "").toLowerCase();
-  if (r.includes("admin") || r.includes("ajans")) return { label: r.includes("ajans") ? "PATRON" : "ADMIN", icon: <Shield className="h-3.5 w-3.5" /> };
-  if (r.includes("vip")) return { label: "VIP", icon: <Crown className="h-3.5 w-3.5" /> };
-  if (r.includes("moder") || r.includes("asistan")) return { label: r.includes("asistan") ? "ASİSTAN" : "MOD", icon: <Shield className="h-3.5 w-3.5" /> };
-  return null;
+  if (r.includes("admin"))   return { label: "ADMİN",   color: "bg-red-500/20 text-red-300 border border-red-500/30",       icon: <Shield className="h-3 w-3" /> };
+  if (r.includes("ajans"))   return { label: "PATRON",  color: "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30", icon: <Crown className="h-3 w-3" /> };
+  if (r.includes("moder"))   return { label: "MOD",     color: "bg-blue-500/20 text-blue-300 border border-blue-500/30",     icon: <Shield className="h-3 w-3" /> };
+  if (r.includes("asistan")) return { label: "ASİSTAN", color: "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30",     icon: <Shield className="h-3 w-3" /> };
+  if (r.includes("vip"))     return { label: "VIP",     color: "bg-rose-500/20 text-rose-300 border border-rose-500/30",     icon: <Crown className="h-3 w-3" /> };
+  return                             { label: "USER",   color: "bg-white/8 text-white/35 border border-white/10",            icon: null };
 }
 
 function roleColor(role?: string) {
   const r = (role || "").toLowerCase();
-  if (r.includes("admin")) return "text-yellow-400";
-  if (r.includes("ajans")) return "text-yellow-300";
-  if (r.includes("moder")) return "text-blue-400";
+  if (r.includes("admin"))   return "text-red-400";
+  if (r.includes("ajans"))   return "text-yellow-300";
+  if (r.includes("moder"))   return "text-blue-400";
   if (r.includes("asistan")) return "text-cyan-400";
-  if (r.includes("vip")) return "text-rose-400";
+  if (r.includes("vip"))     return "text-rose-400";
   return "text-white/80";
 }
 
@@ -135,14 +137,20 @@ export function FloatingChat() {
   // Total unread for FAB badge
   const totalUnread = unreadGlobal + unreadDm;
 
-  // ── Clear unread on tab switch / open ─────────────────────────────────────
+  // Panel açılınca tüm unread'leri sıfırla — açıkken kırmızı badge yok
+  React.useEffect(() => {
+    if (open) {
+      setUnreadGlobal(0); setGlobalPulse(false);
+      setUnreadDm(0); setDmPulse(false);
+    }
+  }, [open]);
+
+  // Tab değişince o tab'ın unread'ini sıfırla
   React.useEffect(() => {
     if (!open) return;
     if (activeTab === "global") { setUnreadGlobal(0); setGlobalPulse(false); }
     if (activeTab === "dm") { setUnreadDm(0); setDmPulse(false); }
-  }, [open, activeTab]);
-
-  React.useEffect(() => { if (open) setUnreadGlobal(0); }, [open]);
+  }, [activeTab, open]);
 
   // ── Auto scroll ────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -285,6 +293,8 @@ export function FloatingChat() {
   }, [(user as any)?.id, (user as any)?.username, (user as any)?.role]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+  const lastSentRef = React.useRef(0);
+
   function sendGlobal() {
     const t = text.trim();
     if (!t || !socketRef.current?.connected) return;
@@ -292,6 +302,17 @@ export function FloatingChat() {
       toast({ title: "Çok hızlı", description: `${cooldownSeconds} saniye bekle`, variant: "destructive" });
       return;
     }
+    // 3 saniyelik client-side spam koruması
+    const now = Date.now();
+    const elapsed = (now - lastSentRef.current) / 1000;
+    if (elapsed < 3) {
+      const wait = Math.ceil(3 - elapsed);
+      setCooldownSeconds(wait);
+      const timer = setInterval(() => setCooldownSeconds(p => { if (p <= 1) { clearInterval(timer); return 0; } return p - 1; }), 1000);
+      toast({ title: "Çok hızlı", description: `${wait} saniye bekle`, variant: "destructive" });
+      return;
+    }
+    lastSentRef.current = now;
     socketRef.current.emit("chat:message", { text: t, avatar: (user as any)?.avatar, replyTo: replyingTo?.id });
     setText(""); setReplyingTo(null);
   }
@@ -551,7 +572,7 @@ export function FloatingChat() {
                                 <AnimatedUsername username={m.displayName || m.username} role={(m.role?.toUpperCase() || "USER") as any} />
                               </span>
                               {badge && (
-                                <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold", mine ? "bg-black/15 text-black" : "bg-yellow-500/15 text-yellow-300 border border-yellow-500/25")}>
+                                <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold", mine ? "bg-black/15 text-black" : badge.color)}>
                                   {badge.icon}{badge.label}
                                 </span>
                               )}
