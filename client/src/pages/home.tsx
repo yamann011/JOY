@@ -612,20 +612,33 @@ export default function Home() {
   const [showRegister, setShowRegister] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstall, setShowInstall] = useState(false);
+  const [pwaName, setPwaName] = useState("MOD CLUB");
 
   useEffect(() => {
+    // PWA name'i API'dan çek
+    fetch("/api/pwa/config").then(r => r.json()).then(d => { if (d.appShortName) setPwaName(d.appShortName); }).catch(() => {});
     const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); setShowInstall(true); };
     window.addEventListener("beforeinstallprompt", handler);
+    // iOS desteği — standalone değilse install göster
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = (window.navigator as any).standalone === true;
+    if (isIOS && !isStandalone) setShowInstall(true);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   const handleInstall = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      setDeferredPrompt(null); setShowInstall(false);
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === "accepted") { setDeferredPrompt(null); setShowInstall(false); }
     } else {
-      window.open("https://support.google.com/chrome/answer/9658361", "_blank");
+      // iOS için Safari rehberi
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      if (isIOS) {
+        alert('iOS\'ta kurmak için: Safari\'de aç → Alt menü "Paylaş" → "Ana Ekrana Ekle"');
+      } else {
+        alert('Tarayıcı adres çubuğundaki "Yükle" simgesine tıklayın veya Chrome menüsünden "Uygulamayı Yükle" seçin.');
+      }
     }
   };
 
@@ -686,7 +699,7 @@ export default function Home() {
               size="sm"
               onClick={handleInstall}
               className="bg-yellow-500/10 border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20 text-xs px-2 h-8 gap-1"
-              title="Uygulamayı İndir"
+              title={`${pwaName} uygulamasını indir`}
             >
               <Download className="w-3 h-3" />
               <span className="hidden sm:inline">İndir</span>
@@ -749,7 +762,7 @@ export default function Home() {
               <Button 
                 size="lg" 
                 variant="outline" 
-                className="border-primary/50 text-primary px-8 h-12 text-lg hover:bg-primary/10 transition-colors"
+                className="border-blue-500/50 text-blue-400 px-8 h-12 text-lg hover:bg-blue-500/10 transition-colors"
                 onClick={() => {
                   if (socialLinks?.moreInfoUrl) {
                     window.open(socialLinks.moreInfoUrl, '_blank');
@@ -757,7 +770,7 @@ export default function Home() {
                 }}
                 disabled={!socialLinks?.moreInfoUrl}
               >
-                Daha Fazla Bilgi
+                📢 Telegram Kanalı
               </Button>
               <Button
                 size="lg"

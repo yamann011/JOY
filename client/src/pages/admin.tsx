@@ -1786,7 +1786,13 @@ function PWASettings() {
 
   useEffect(() => {
     if (pwaData) {
-      setPwaConfig(pwaData);
+      setPwaConfig({
+        appName: pwaData.appName || "MOD CLUB",
+        appShortName: pwaData.appShortName || "MOD",
+        appDescription: pwaData.appDescription || "MOD CLUB - Eğlence ve Sosyal Platform",
+        appIconUrl: pwaData.appIconUrl || "/favicon.png",
+        themeColor: pwaData.themeColor || "#D4AF37",
+      });
     }
   }, [pwaData]);
 
@@ -1830,13 +1836,27 @@ function PWASettings() {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
+          {/* Simge önizlemesi */}
+          <div className="flex items-center gap-4 p-4 border border-yellow-500/30 rounded-xl bg-yellow-500/5">
+            <img
+              src={pwaConfig.appIconUrl || "/favicon.png"}
+              alt="Uygulama simgesi"
+              className="w-16 h-16 rounded-2xl object-cover border border-yellow-500/40 shadow-lg"
+              onError={(e) => { (e.target as any).src = "/favicon.png"; }}
+            />
+            <div>
+              <p className="font-bold text-yellow-400">{pwaConfig.appName || "MOD CLUB"}</p>
+              <p className="text-xs text-muted-foreground">{pwaConfig.appShortName || "MOD"}</p>
+              <p className="text-xs text-muted-foreground mt-1">Ana ekran önizlemesi</p>
+            </div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Uygulama Adı (Uzun)</Label>
               <Input
                 value={pwaConfig.appName}
                 onChange={(e) => setPwaConfig({ ...pwaConfig, appName: e.target.value })}
-                placeholder="JOY Platform"
+                placeholder="MOD CLUB"
               />
               <p className="text-xs text-muted-foreground">Ana ekranda görünecek tam isim</p>
             </div>
@@ -1846,7 +1866,7 @@ function PWASettings() {
               <Input
                 value={pwaConfig.appShortName}
                 onChange={(e) => setPwaConfig({ ...pwaConfig, appShortName: e.target.value })}
-                placeholder="JOY"
+                placeholder="MOD"
               />
               <p className="text-xs text-muted-foreground">Sınırlı alan için kısa isim (12 karakter)</p>
             </div>
@@ -1857,7 +1877,7 @@ function PWASettings() {
             <Textarea
               value={pwaConfig.appDescription}
               onChange={(e) => setPwaConfig({ ...pwaConfig, appDescription: e.target.value })}
-              placeholder="JOY - Eğlence ve Sosyal Platform"
+              placeholder="MOD CLUB - Eğlence ve Sosyal Platform"
               className="min-h-[80px]"
             />
           </div>

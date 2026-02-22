@@ -1,7 +1,7 @@
 {
-  "name": "MOD - Eğlence Platformu",
+  "name": "MOD CLUB",
   "short_name": "MOD",
-  "description": "MOD - Eğlence ve Sosyal Platform",
+  "description": "MOD CLUB - Eğlence ve Sosyal Platform",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
@@ -19,25 +19,21 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ],
   "categories": ["entertainment", "social"],
-  "screenshots": [],
   "shortcuts": [
-    {
-      "name": "Sohbet",
-      "url": "/chat",
-      "description": "Sohbet odasına git"
-    },
-    {
-      "name": "Haberler",
-      "url": "/news",
-      "description": "Son haberleri gör"
-    },
-    {
-      "name": "Etkinlikler",
-      "url": "/events",
-      "description": "Etkinlikleri görüntüle"
-    }
+    { "name": "Sohbet", "url": "/chat", "description": "Sohbet odasına git" },
+    { "name": "Haberler", "url": "/news", "description": "Son haberleri gör" }
   ]
 }

@@ -1002,6 +1002,39 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // PWA Settings endpoints
+  // Dynamic manifest — DB'den okur, admin panelinden güncellenebilir
+  app.get("/api/manifest.json", async (req, res) => {
+    try {
+      const appName = await storage.getSetting("pwaAppName");
+      const appShortName = await storage.getSetting("pwaAppShortName");
+      const appDescription = await storage.getSetting("pwaAppDescription");
+      const appIconUrl = await storage.getSetting("pwaAppIconUrl");
+      const themeColor = await storage.getSetting("pwaThemeColor");
+      const iconSrc = appIconUrl?.value || "/favicon.png";
+      res.setHeader("Content-Type", "application/manifest+json");
+      res.json({
+        name: appName?.value || "MOD CLUB",
+        short_name: appShortName?.value || "MOD",
+        description: appDescription?.value || "MOD CLUB - Eğlence ve Sosyal Platform",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#000000",
+        theme_color: themeColor?.value || "#D4AF37",
+        orientation: "portrait-primary",
+        icons: [
+          { src: iconSrc, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+          { src: iconSrc, sizes: "512x512", type: "image/png", purpose: "any maskable" },
+        ],
+        shortcuts: [
+          { name: "Sohbet", url: "/chat" },
+          { name: "Haberler", url: "/news" },
+        ],
+      });
+    } catch {
+      res.status(500).json({ message: "Manifest yüklenemedi" });
+    }
+  });
+
   app.get("/api/pwa/config", async (req, res) => {
     try {
       const appName = await storage.getSetting("pwaAppName");
@@ -1011,9 +1044,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const themeColor = await storage.getSetting("pwaThemeColor");
 
       res.json({
-        appName: appName?.value || "JOY Platform",
-        appShortName: appShortName?.value || "JOY",
-        appDescription: appDescription?.value || "JOY - Eğlence ve Sosyal Platform",
+        appName: appName?.value || "MOD CLUB",
+        appShortName: appShortName?.value || "MOD",
+        appDescription: appDescription?.value || "MOD CLUB - Eğlence ve Sosyal Platform",
         appIconUrl: appIconUrl?.value || "/favicon.png",
         themeColor: themeColor?.value || "#D4AF37",
       });
@@ -1048,9 +1081,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       res.json({
-        appName: appName || "JOY Platform",
-        appShortName: appShortName || "JOY",
-        appDescription: appDescription || "JOY - Eğlence ve Sosyal Platform",
+        appName: appName || "MOD CLUB",
+        appShortName: appShortName || "MOD",
+        appDescription: appDescription || "MOD CLUB - Eğlence ve Sosyal Platform",
         appIconUrl: appIconUrl || "/favicon.png",
         themeColor: themeColor || "#D4AF37",
       });
