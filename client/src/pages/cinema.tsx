@@ -219,9 +219,7 @@ export default function CinemaPage() {
 
   const canControlVideo = (vs?: VideoState | null) => {
     if (!user) return false;
-    if (vs?.createdByUserId && String((user as any).id) === vs.createdByUserId) return true;
-    const r = ((user as any).role || "").toLowerCase();
-    return r.includes("admin");
+    return !!(vs?.createdByUserId && String((user as any).id) === vs.createdByUserId);
   };
 
   // ── Socket ──────────────────────────────────────────────────────────────────
@@ -491,7 +489,7 @@ export default function CinemaPage() {
           <Badge variant="outline" className="border-yellow-500/30 text-yellow-300 text-xs shrink-0">
             <Users className="w-3 h-3 mr-1" />{currentRoom.participantCount}
           </Badge>
-          {(isOwner || canModerate()) && (
+          {isOwner && (
             <Button size="sm" variant="outline" className="border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10 text-xs px-2 h-7 shrink-0"
               onClick={() => { setSettingsName(currentRoom.name); setSettingsPass(""); setSettingsClearPass(false); setNewUrl(videoState.videoUrl); setShowRoomSettings(true); }}>
               <Settings className="w-3 h-3 mr-1" /> Ayarlar

@@ -700,11 +700,9 @@ cinemaIO.on("connection", (socket) => {
     });
   });
 
-  // Oynat/Duraklat/Seek — sadece oda kurucusu + admin/mod
+  // Oynat/Duraklat/Seek — sadece oda kurucusu
   function canControlVideo(room: CinemaRoom): boolean {
-    if (u.userId && u.userId === room.createdByUserId) return true;
-    const r = u.role.toLowerCase();
-    return r.includes("admin") || r.includes("moder") || r.includes("asistan") || r.includes("ajans");
+    return !!(u.userId && u.userId === room.createdByUserId);
   }
 
   socket.on("cinema:play", (payload: { currentTime?: number }) => {
@@ -878,12 +876,6 @@ cinemaIO.on("connection", (socket) => {
           participants: participantList,
           count: room.participants.size,
         });
-        // Oda boşalınca videoyu duraklat ve zamanı kaydet
-        if (room.participants.size === 0 && room.isPlaying) {
-          room.currentTime = calcCurrentTime(room);
-          room.lastSyncAt = Date.now();
-          room.isPlaying = false;
-        }
       }
     }
   });
