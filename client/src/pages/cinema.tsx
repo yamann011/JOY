@@ -192,7 +192,8 @@ export default function CinemaPage() {
   const socketRef = useRef<Socket | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const pendingRejoinRef = useRef<CinemaRoomInfo | null>(null); // F5 auto-rejoin
+  const pendingRejoinRef = useRef<CinemaRoomInfo | null>(null);
+  const playerReadyRef = useRef(false); // YouTube player hazır mı?
 
   const [iframeSrc, setIframeSrc] = useState("");
   const [iframeKey, setIframeKey] = useState(0); // iframe'i zorla yeniden yükle
@@ -283,6 +284,7 @@ export default function CinemaPage() {
 
     socket.on("cinema:state", (state: VideoState) => {
       stateReceivedAtRef.current = Date.now();
+      playerReadyRef.current = false; // Yeni iframe yükleniyor, henüz hazır değil
       videoStateRef.current = state;
       localTimeRef.current = state.currentTime;
       setVideoState(state);
@@ -346,7 +348,8 @@ export default function CinemaPage() {
       else if (!playing && !videoEl.paused) videoEl.pause();
       return;
     }
-    if (!iframe) return;
+    // Player henüz hazır değilse (iframe yükleniyor) komutu atla — onReady halleder
+    if (!iframe || !playerReadyRef.current) return;
     if (playing) {
       ytCommand(iframe, "seekTo", [Math.floor(time), true]);
       ytCommand(iframe, "unMute");
@@ -366,6 +369,7 @@ export default function CinemaPage() {
 
         // YouTube player hazır → sesi aç, canlı pozisyondan oynat
         if (d.event === "onReady" || d.info === "ytPlayer") {
+          playerReadyRef.current = true;
           const iframe = iframeRef.current;
           if (!iframe) return;
           setTimeout(() => {
